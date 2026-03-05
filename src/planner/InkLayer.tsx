@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 
 export type InkInputType = "pen" | "touch" | "mouse" | "unknown";
 export type InkShapeKind = "line" | "rectangle" | "ellipse";
+export type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
 export type InkLayerMode =
   | "draw"
   | "erase"
@@ -19,6 +20,7 @@ interface InkLayerProps {
   lineWidth?: number;
   opacity?: number;
   symbol?: string | null;
+  tipKind?: InkTipKind;
   lockToCells?: boolean;
   mode?: InkLayerMode;
   shapeKind?: InkShapeKind;
@@ -44,6 +46,7 @@ interface InkStroke {
   color: string;
   width: number;
   opacity: number;
+  tip?: InkTipKind;
   points: InkPoint[];
   clipRect?: InkClipRect | null;
   stickyId?: string;
@@ -76,6 +79,8 @@ interface InkFill {
   rect: InkClipRect;
   color: string;
   opacity: number;
+  points?: InkPoint[];
+  clipRect?: InkClipRect | null;
   stickyId?: string;
 }
 
@@ -107,6 +112,7 @@ interface ActiveShape {
   pointerId: number;
   start: InkPoint;
   current: InkPoint;
+  tip: InkTipKind;
   clipRect?: InkClipRect | null;
   stickyId?: string;
 }
@@ -173,6 +179,86 @@ function normalizeInputType(pointerType: string): InkInputType {
     return pointerType;
   }
   return "unknown";
+}
+
+function normalizeInkTip(value: unknown): InkTipKind {
+  if (value === "round") {
+    return "round";
+  }
+  if (value === "fine") {
+    return "fine";
+  }
+  if (value === "fountain") {
+    return "fountain";
+  }
+  if (value === "marker") {
+    return "marker";
+  }
+  if (value === "chisel") {
+    return "chisel";
+  }
+  return "round";
+}
+
+function tipWidthMultiplier(tip: InkTipKind): number {
+  if (tip === "fine") {
+    return 0.74;
+  }
+  if (tip === "fountain") {
+    return 1.08;
+  }
+  if (tip === "marker") {
+    return 1.35;
+  }
+  if (tip === "chisel") {
+    return 1.22;
+  }
+  return 1;
+}
+
+function tipPressureFactor(tip: InkTipKind, pressure: number): number {
+  if (tip === "fine") {
+    return 0.52 + pressure * 0.5;
+  }
+  if (tip === "fountain") {
+    return 0.22 + pressure * 1.45;
+  }
+  if (tip === "marker") {
+    return 1;
+  }
+  if (tip === "chisel") {
+    return 0.86 + pressure * 0.24;
+  }
+  return pressure;
+}
+
+function tipLineCap(tip: InkTipKind): CanvasLineCap {
+  if (tip === "marker") {
+    return "square";
+  }
+  if (tip === "chisel") {
+    return "butt";
+  }
+  return "round";
+}
+
+function tipLineJoin(tip: InkTipKind): CanvasLineJoin {
+  if (tip === "chisel") {
+    return "bevel";
+  }
+  return "round";
+}
+
+function strokeSegmentWidth(stroke: InkStroke, pressure: number): number {
+  const tip = normalizeInkTip(stroke.tip);
+  return stroke.width * tipWidthMultiplier(tip) * tipPressureFactor(tip, pressure);
+}
+
+function normalizeStrokeTip<T extends { tip?: InkTipKind }>(stroke: T): T {
+  return {
+    ...stroke,
+    tip: normalizeInkTip(stroke.tip),
+  };
 }
 
 function isLikelyStylusPointer(event: PointerEvent): boolean {
@@ -314,6 +400,10 @@ function clampOpacity(value: number): number {
   return Math.min(Math.max(value, 0.05), 1);
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 function getSurfaceMetrics(element: HTMLElement): SurfaceMetrics {
   const rect = element.getBoundingClientRect();
   const baseWidth =
@@ -338,9 +428,11 @@ function getRelativePoint(
   event: PointerLikeEvent,
   metrics: SurfaceMetrics,
 ): InkPoint {
+  const x = (event.clientX - metrics.rect.left) / metrics.scaleX;
+  const y = (event.clientY - metrics.rect.top) / metrics.scaleY;
   return {
-    x: (event.clientX - metrics.rect.left) / metrics.scaleX,
-    y: (event.clientY - metrics.rect.top) / metrics.scaleY,
+    x: clampNumber(x, 0, metrics.width),
+    y: clampNumber(y, 0, metrics.height),
     pressure: clampPressure(event.pressure),
     timestamp: Date.now(),
   };
@@ -434,6 +526,18 @@ function parseStoredInk(raw: string): InkDocument {
 
 function cloneInkDocument(document: InkDocument): InkDocument {
   return JSON.parse(JSON.stringify(document)) as InkDocument;
+}
+
+function normalizeClipToSticky<T extends { stickyId?: string; clipRect?: InkClipRect | null }>(
+  entry: T,
+): T {
+  if (entry.stickyId) {
+    return entry;
+  }
+  return {
+    ...entry,
+    clipRect: null,
+  };
 }
 
 function clampStickyToCanvas(
@@ -774,7 +878,69 @@ function imageBounds(image: InkImage): InkClipRect {
 }
 
 function fillBounds(fill: InkFill): InkClipRect {
+  if (fill.points && fill.points.length >= 3) {
+    return polygonBounds(fill.points) ?? fill.rect;
+  }
   return fill.rect;
+}
+
+function isClosedStrokePath(stroke: InkStroke): boolean {
+  if (stroke.points.length < 3) {
+    return false;
+  }
+
+  const first = stroke.points[0];
+  const last = stroke.points[stroke.points.length - 1];
+  const dx = first.x - last.x;
+  const dy = first.y - last.y;
+  const closeThreshold = Math.max(8, stroke.width * 1.8);
+  return dx * dx + dy * dy <= closeThreshold * closeThreshold;
+}
+
+function strokeContainsPointForFill(stroke: InkStroke, point: InkPoint): boolean {
+  if (stroke.clipRect && !pointInRect(point, stroke.clipRect)) {
+    return false;
+  }
+
+  if (!isClosedStrokePath(stroke)) {
+    return false;
+  }
+
+  return pointInPolygon(point, stroke.points);
+}
+
+function findBucketTargetStroke(
+  strokes: InkStroke[],
+  point: InkPoint,
+  stickyId?: string,
+): InkStroke | null {
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    const candidate = strokes[index];
+    if (stickyId && candidate.stickyId !== stickyId) {
+      continue;
+    }
+
+    if (!stickyId && candidate.stickyId) {
+      continue;
+    }
+
+    if (strokeContainsPointForFill(candidate, point)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function fillPathMatches(
+  existing: InkFill,
+  nextFillBounds: InkClipRect,
+  stickyId?: string,
+): boolean {
+  if (!existing.points || !rectMatches(existing.rect, nextFillBounds)) {
+    return false;
+  }
+  return existing.stickyId === stickyId;
 }
 
 function rectIntersectsPolygon(rect: InkClipRect, polygon: InkPoint[]): boolean {
@@ -862,12 +1028,14 @@ function shapeStrokeFromPoints(
   width: number,
   opacity: number,
   clipRect?: InkClipRect | null,
+  tip: InkTipKind = "round",
 ): InkStroke {
   if (kind === "line") {
     return {
       color,
       width,
       opacity,
+      tip,
       points: [start, end],
       clipRect,
     };
@@ -887,6 +1055,7 @@ function shapeStrokeFromPoints(
       color,
       width,
       opacity,
+      tip,
       points: [topLeft, topRight, bottomRight, bottomLeft, topLeft],
       clipRect,
     };
@@ -913,6 +1082,7 @@ function shapeStrokeFromPoints(
     color,
     width,
     opacity,
+    tip,
     points,
     clipRect,
   };
@@ -985,6 +1155,7 @@ function detectAutoShapeStroke(
         stroke.width,
         stroke.opacity,
         stroke.clipRect,
+        normalizeInkTip(stroke.tip),
       );
     }
     return null;
@@ -1033,6 +1204,7 @@ function detectAutoShapeStroke(
       stroke.width,
       stroke.opacity,
       stroke.clipRect,
+      normalizeInkTip(stroke.tip),
     );
   }
 
@@ -1067,6 +1239,7 @@ function detectAutoShapeStroke(
       stroke.width,
       stroke.opacity,
       stroke.clipRect,
+      normalizeInkTip(stroke.tip),
     );
   }
 
@@ -1081,6 +1254,7 @@ export default function InkLayer({
   lineWidth = 1.7,
   opacity = 1,
   symbol = null,
+  tipKind = "round",
   lockToCells = false,
   mode = "draw",
   shapeKind = "line",
@@ -1243,10 +1417,22 @@ export default function InkLayer({
       ctx.clearRect(0, 0, metrics.width, metrics.height);
 
       for (const fill of fillsRef.current) {
-        ctx.fillStyle = fill.color;
-        ctx.globalAlpha = clampOpacity(fill.opacity);
-        ctx.fillRect(fill.rect.x, fill.rect.y, fill.rect.width, fill.rect.height);
-        ctx.globalAlpha = 1;
+        drawWithClip(ctx, fill.clipRect, () => {
+          ctx.fillStyle = fill.color;
+          ctx.globalAlpha = clampOpacity(fill.opacity);
+          if (fill.points && fill.points.length >= 3) {
+            ctx.beginPath();
+            ctx.moveTo(fill.points[0].x, fill.points[0].y);
+            for (let index = 1; index < fill.points.length; index += 1) {
+              ctx.lineTo(fill.points[index].x, fill.points[index].y);
+            }
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            ctx.fillRect(fill.rect.x, fill.rect.y, fill.rect.width, fill.rect.height);
+          }
+          ctx.globalAlpha = 1;
+        });
       }
 
       for (const imageItem of imagesRef.current) {
@@ -1287,16 +1473,21 @@ export default function InkLayer({
         }
 
         drawWithClip(ctx, stroke.clipRect, () => {
+          const normalizedTip = normalizeInkTip(stroke.tip);
           ctx.strokeStyle = stroke.color;
           ctx.fillStyle = stroke.color;
-          ctx.lineCap = "round";
-          ctx.lineJoin = "round";
+          ctx.lineCap = tipLineCap(normalizedTip);
+          ctx.lineJoin = tipLineJoin(normalizedTip);
           ctx.globalAlpha = clampOpacity(stroke.opacity);
 
           if (stroke.points.length === 1) {
             const point = stroke.points[0];
+            const pointRadius = Math.max(
+              0.6,
+              (strokeSegmentWidth(stroke, point.pressure) * 0.45),
+            );
             ctx.beginPath();
-            ctx.arc(point.x, point.y, stroke.width * 0.45, 0, Math.PI * 2);
+            ctx.arc(point.x, point.y, pointRadius, 0, Math.PI * 2);
             ctx.fill();
             ctx.globalAlpha = 1;
             return;
@@ -1307,7 +1498,7 @@ export default function InkLayer({
             const currentPoint = stroke.points[i];
             const segmentPressure =
               (previousPoint.pressure + currentPoint.pressure) / 2;
-            ctx.lineWidth = stroke.width * segmentPressure;
+            ctx.lineWidth = strokeSegmentWidth(stroke, segmentPressure);
             ctx.beginPath();
             ctx.moveTo(previousPoint.x, previousPoint.y);
             ctx.lineTo(currentPoint.x, currentPoint.y);
@@ -1344,13 +1535,15 @@ export default function InkLayer({
           lineWidth,
           clampOpacity(opacity),
           activeShape.clipRect,
+          activeShape.tip,
         );
         drawWithClip(ctx, previewStroke.clipRect, () => {
+          const previewTip = normalizeInkTip(previewStroke.tip);
           ctx.strokeStyle = previewStroke.color;
-          ctx.lineCap = "round";
-          ctx.lineJoin = "round";
+          ctx.lineCap = tipLineCap(previewTip);
+          ctx.lineJoin = tipLineJoin(previewTip);
           ctx.globalAlpha = previewStroke.opacity;
-          ctx.lineWidth = previewStroke.width;
+          ctx.lineWidth = strokeSegmentWidth(previewStroke, 1);
 
           ctx.beginPath();
           ctx.moveTo(previewStroke.points[0].x, previewStroke.points[0].y);
@@ -1422,11 +1615,12 @@ export default function InkLayer({
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
 
       drawWithClip(ctx, stroke.clipRect, () => {
+        const normalizedTip = normalizeInkTip(stroke.tip);
         ctx.strokeStyle = stroke.color;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
+        ctx.lineCap = tipLineCap(normalizedTip);
+        ctx.lineJoin = tipLineJoin(normalizedTip);
         ctx.globalAlpha = clampOpacity(stroke.opacity);
-        ctx.lineWidth = stroke.width * segmentPressure;
+        ctx.lineWidth = strokeSegmentWidth(stroke, segmentPressure);
         ctx.beginPath();
         ctx.moveTo(previousPoint.x, previousPoint.y);
         ctx.lineTo(currentPoint.x, currentPoint.y);
@@ -1648,7 +1842,25 @@ export default function InkLayer({
     };
 
     const moveSelectionBy = (selection: LassoSelection, deltaX: number, deltaY: number) => {
-      if (Math.abs(deltaX) < 0.001 && Math.abs(deltaY) < 0.001) {
+      const canvasMetrics = getSurfaceMetrics(canvas);
+      const minDeltaX = -selection.bounds.x;
+      const maxDeltaX =
+        canvasMetrics.width - (selection.bounds.x + selection.bounds.width);
+      const minDeltaY = -selection.bounds.y;
+      const maxDeltaY =
+        canvasMetrics.height - (selection.bounds.y + selection.bounds.height);
+      const boundedDeltaX = clampNumber(
+        deltaX,
+        Math.min(minDeltaX, maxDeltaX),
+        Math.max(minDeltaX, maxDeltaX),
+      );
+      const boundedDeltaY = clampNumber(
+        deltaY,
+        Math.min(minDeltaY, maxDeltaY),
+        Math.max(minDeltaY, maxDeltaY),
+      );
+
+      if (Math.abs(boundedDeltaX) < 0.001 && Math.abs(boundedDeltaY) < 0.001) {
         return;
       }
 
@@ -1659,14 +1871,14 @@ export default function InkLayer({
         }
         stroke.points = stroke.points.map((point) => ({
           ...point,
-          x: point.x + deltaX,
-          y: point.y + deltaY,
+          x: point.x + boundedDeltaX,
+          y: point.y + boundedDeltaY,
         }));
         if (stroke.clipRect) {
           stroke.clipRect = {
             ...stroke.clipRect,
-            x: stroke.clipRect.x + deltaX,
-            y: stroke.clipRect.y + deltaY,
+            x: stroke.clipRect.x + boundedDeltaX,
+            y: stroke.clipRect.y + boundedDeltaY,
           };
         }
       }
@@ -1676,13 +1888,13 @@ export default function InkLayer({
         if (!currentSymbol) {
           continue;
         }
-        currentSymbol.x += deltaX;
-        currentSymbol.y += deltaY;
+        currentSymbol.x += boundedDeltaX;
+        currentSymbol.y += boundedDeltaY;
         if (currentSymbol.clipRect) {
           currentSymbol.clipRect = {
             ...currentSymbol.clipRect,
-            x: currentSymbol.clipRect.x + deltaX,
-            y: currentSymbol.clipRect.y + deltaY,
+            x: currentSymbol.clipRect.x + boundedDeltaX,
+            y: currentSymbol.clipRect.y + boundedDeltaY,
           };
         }
       }
@@ -1692,13 +1904,13 @@ export default function InkLayer({
         if (!currentImage) {
           continue;
         }
-        currentImage.x += deltaX;
-        currentImage.y += deltaY;
+        currentImage.x += boundedDeltaX;
+        currentImage.y += boundedDeltaY;
         if (currentImage.clipRect) {
           currentImage.clipRect = {
             ...currentImage.clipRect,
-            x: currentImage.clipRect.x + deltaX,
-            y: currentImage.clipRect.y + deltaY,
+            x: currentImage.clipRect.x + boundedDeltaX,
+            y: currentImage.clipRect.y + boundedDeltaY,
           };
         }
       }
@@ -1710,9 +1922,23 @@ export default function InkLayer({
         }
         fill.rect = {
           ...fill.rect,
-          x: fill.rect.x + deltaX,
-          y: fill.rect.y + deltaY,
+          x: fill.rect.x + boundedDeltaX,
+          y: fill.rect.y + boundedDeltaY,
         };
+        if (fill.points) {
+          fill.points = fill.points.map((point) => ({
+            ...point,
+            x: point.x + boundedDeltaX,
+            y: point.y + boundedDeltaY,
+          }));
+        }
+        if (fill.clipRect) {
+          fill.clipRect = {
+            ...fill.clipRect,
+            x: fill.clipRect.x + boundedDeltaX,
+            y: fill.clipRect.y + boundedDeltaY,
+          };
+        }
       }
     };
 
@@ -1737,8 +1963,8 @@ export default function InkLayer({
         }
       }
 
-      const clipRect = lockToCells ? getCellClipRect(event, surface) : null;
-      if (lockToCells && !clipRect) {
+      const cellClipRect = lockToCells ? getCellClipRect(event, surface) : null;
+      if (lockToCells && !cellClipRect) {
         return;
       }
 
@@ -1750,7 +1976,7 @@ export default function InkLayer({
         .reverse()
         .find((sticky) => pointInRect(point, stickyRect(sticky)));
       const stickyTargetRect = stickyTarget ? stickyRect(stickyTarget) : null;
-      const effectiveClipRect = stickyTargetRect ?? clipRect;
+      const effectiveClipRect = stickyTargetRect ?? null;
       const attachedStickyId = stickyTarget?.id;
 
       if (mode === "erase") {
@@ -1766,6 +1992,47 @@ export default function InkLayer({
       }
 
       if (mode === "bucket") {
+        const bucketStrokeTarget = findBucketTargetStroke(
+          strokesRef.current,
+          point,
+          attachedStickyId,
+        );
+        if (bucketStrokeTarget) {
+          const bucketStrokeBounds =
+            polygonBounds(bucketStrokeTarget.points) ??
+            strokeBounds(bucketStrokeTarget);
+          if (!bucketStrokeBounds) {
+            return;
+          }
+
+          captureUndoSnapshot();
+          const nextFill: InkFill = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            rect: bucketStrokeBounds,
+            color,
+            opacity: BUCKET_FILL_OPACITY,
+            points: bucketStrokeTarget.points.map((fillPoint) => ({
+              ...fillPoint,
+            })),
+            clipRect: bucketStrokeTarget.clipRect ?? null,
+            stickyId: bucketStrokeTarget.stickyId,
+          };
+          const withoutExistingFill = fillsRef.current.filter(
+            (candidate) =>
+              !fillPathMatches(
+                candidate,
+                bucketStrokeBounds,
+                bucketStrokeTarget.stickyId,
+              ),
+          );
+          fillsRef.current = [...withoutExistingFill, nextFill];
+          persistInk();
+          redraw();
+          event.preventDefault();
+          maybeStopPropagation(event);
+          return;
+        }
+
         const fillRect = stickyTargetRect ?? getCellClipRect(event, surface);
         if (!fillRect) {
           return;
@@ -1782,6 +2049,7 @@ export default function InkLayer({
         const withoutExistingFill = fillsRef.current.filter(
           (candidate) =>
             !(
+              !candidate.points &&
               rectMatches(candidate.rect, fillRect) &&
               candidate.stickyId === attachedStickyId
             ),
@@ -1799,6 +2067,7 @@ export default function InkLayer({
           pointerId: event.pointerId,
           start: point,
           current: point,
+          tip: normalizeInkTip(tipKind),
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
         };
@@ -1920,6 +2189,7 @@ export default function InkLayer({
           color,
           width: lineWidth,
           opacity: clampOpacity(opacity),
+          tip: normalizeInkTip(tipKind),
           points: [point],
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
@@ -2031,6 +2301,7 @@ export default function InkLayer({
             lineWidth,
             clampOpacity(opacity),
             activeShape.clipRect,
+            activeShape.tip,
           ),
           stickyId: activeShape.stickyId,
         };
@@ -2328,9 +2599,15 @@ export default function InkLayer({
       const raw = localStorage.getItem(storageKey(pageId));
       if (raw) {
         const parsed = parseStoredInk(raw);
-        strokesRef.current = parsed.strokes;
-        symbolsRef.current = parsed.symbols;
-        imagesRef.current = parsed.images;
+        strokesRef.current = parsed.strokes.map((stroke) =>
+          normalizeStrokeTip(normalizeClipToSticky(stroke)),
+        );
+        symbolsRef.current = parsed.symbols.map((symbolValue) =>
+          normalizeClipToSticky(symbolValue),
+        );
+        imagesRef.current = parsed.images.map((imageValue) =>
+          normalizeClipToSticky(imageValue),
+        );
         fillsRef.current = parsed.fills;
         stickiesRef.current = parsed.stickies;
       }
@@ -2411,6 +2688,7 @@ export default function InkLayer({
     setActiveInkPage,
     shapeKind,
     symbol,
+    tipKind,
   ]);
 
   const expandSticky = (id: string) => {
@@ -2562,6 +2840,20 @@ export default function InkLayer({
             x: fillValue.rect.x + deltaX,
             y: fillValue.rect.y + deltaY,
           },
+          points: fillValue.points
+            ? fillValue.points.map((point) => ({
+                ...point,
+                x: point.x + deltaX,
+                y: point.y + deltaY,
+              }))
+            : fillValue.points,
+          clipRect: fillValue.clipRect
+            ? {
+                ...fillValue.clipRect,
+                x: fillValue.clipRect.x + deltaX,
+                y: fillValue.clipRect.y + deltaY,
+              }
+            : fillValue.clipRect,
         };
       });
     }

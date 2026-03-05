@@ -28,7 +28,6 @@ const DEFAULT_COLOR_PALETTE = [
   "#7f3c9a",
   "#5f5f63",
 ];
-const SIZE_PRESETS = [1.1, 2.1, 3.1, 4.2];
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.8;
 const PENCIL_DOUBLE_TAP_MS = 340;
@@ -41,6 +40,7 @@ const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
 
 type ShapeKind = "line" | "rectangle" | "ellipse";
 type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
+type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
 type InkTool =
   | DrawingTool
   | "eraser"
@@ -56,6 +56,7 @@ interface FavoriteStyle {
   tool: DrawingTool;
   color: string;
   size: number;
+  tip: InkTipKind;
 }
 
 interface SymbolOption {
@@ -141,6 +142,33 @@ const SYMBOL_OPTIONS: SymbolOption[] = [
   { label: "Arrow", value: "→" },
   { label: "Heart", value: "♥" },
 ];
+
+const TIP_OPTIONS: Array<{ value: InkTipKind; label: string }> = [
+  { value: "round", label: "Round" },
+  { value: "fine", label: "Fine" },
+  { value: "fountain", label: "Fountain" },
+  { value: "marker", label: "Marker" },
+  { value: "chisel", label: "Chisel" },
+];
+
+function normalizeInkTip(value: unknown): InkTipKind {
+  if (value === "round") {
+    return "round";
+  }
+  if (value === "fine") {
+    return "fine";
+  }
+  if (value === "fountain") {
+    return "fountain";
+  }
+  if (value === "marker") {
+    return "marker";
+  }
+  if (value === "chisel") {
+    return "chisel";
+  }
+  return "round";
+}
 
 function ToolIcon({ tool }: { tool: InkTool }) {
   if (tool === "pen") {
@@ -379,6 +407,7 @@ function loadFavoriteStyles(): FavoriteStyle[] {
       tool: candidate.tool as DrawingTool,
       color: candidate.color.toLowerCase(),
       size: clampStrokeSize(candidate.size),
+      tip: normalizeInkTip(candidate.tip),
     });
 
     if (styles.length >= FAVORITE_STYLE_LIMIT) {
@@ -393,12 +422,14 @@ function makeFavoriteStyle(
   tool: DrawingTool,
   color: string,
   size: number,
+  tip: InkTipKind,
 ): FavoriteStyle {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     tool,
     color: color.toLowerCase(),
     size: clampStrokeSize(size),
+    tip: normalizeInkTip(tip),
   };
 }
 
@@ -409,6 +440,7 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<InkTool>("pen");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
+  const [activeTip, setActiveTip] = useState<InkTipKind>("round");
   const [activeSymbol, setActiveSymbol] = useState<string>("");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [textStamp, setTextStamp] = useState<string>("note");
@@ -499,6 +531,7 @@ export default function App() {
   const showElementControls = activeTool === "elements";
   const showTextControls = activeTool === "text";
   const showImageControls = activeTool === "image";
+  const canSelectTip = isDrawingTool(activeTool);
 
   useEffect(() => {
     try {
@@ -952,13 +985,15 @@ export default function App() {
 
     const normalizedColor = activeColor.toLowerCase();
     const normalizedSize = clampStrokeSize(strokeSize);
+    const normalizedTip = normalizeInkTip(activeTip);
 
     setFavoriteStyles((current) => {
       const exists = current.some(
         (preset) =>
           preset.tool === activeTool &&
           preset.color === normalizedColor &&
-          Math.abs(preset.size - normalizedSize) < 0.001,
+          Math.abs(preset.size - normalizedSize) < 0.001 &&
+          preset.tip === normalizedTip,
       );
 
       if (exists) {
@@ -966,7 +1001,12 @@ export default function App() {
       }
 
       return [
-        makeFavoriteStyle(activeTool, normalizedColor, normalizedSize),
+        makeFavoriteStyle(
+          activeTool,
+          normalizedColor,
+          normalizedSize,
+          normalizedTip,
+        ),
         ...current,
       ].slice(0, FAVORITE_STYLE_LIMIT);
     });
@@ -976,6 +1016,7 @@ export default function App() {
     setActiveTool(preset.tool);
     setActiveColor(preset.color);
     setStrokeSize(preset.size);
+    setActiveTip(normalizeInkTip(preset.tip));
     setActiveSymbol("");
   };
 
@@ -1132,24 +1173,50 @@ export default function App() {
             </button>
           </div>
 
-          <div className="top-toolbar-group">
-            {SIZE_PRESETS.map((sizePreset) => (
+          <div className="top-toolbar-group draw-weight-group">
+            <label htmlFor="draw-weight-slider" className="draw-weight-label">
+              Weight
+            </label>
+            <input
+              id="draw-weight-slider"
+              className="draw-weight-slider"
+              type="range"
+              min="0.8"
+              max="4.8"
+              step="0.1"
+              value={clampStrokeSize(strokeSize)}
+              onChange={(event) => {
+                setStrokeSize(clampStrokeSize(Number(event.target.value)));
+              }}
+              disabled={!isStrokeEnabled}
+              aria-label="Draw weight"
+            />
+            <span className="draw-weight-value">
+              {clampStrokeSize(strokeSize).toFixed(1)}
+            </span>
+          </div>
+
+          <div className="top-toolbar-group tip-selector-group">
+            {TIP_OPTIONS.map((tipOption) => (
               <button
-                key={`size-${sizePreset}`}
+                key={tipOption.value}
                 type="button"
                 className={
-                  isStrokeEnabled &&
-                  Math.abs(clampStrokeSize(strokeSize) - sizePreset) < 0.06
-                    ? "toolbar-button active"
-                    : "toolbar-button"
+                  activeTip === tipOption.value
+                    ? "toolbar-button tip-chip-button active"
+                    : "toolbar-button tip-chip-button"
                 }
                 onClick={() => {
-                  setStrokeSize(sizePreset);
+                  setActiveTip(tipOption.value);
                 }}
-                title={`Stroke ${sizePreset.toFixed(1)}`}
-                disabled={!isStrokeEnabled}
+                title={`${tipOption.label} tip`}
+                disabled={!canSelectTip}
               >
-                {sizePreset.toFixed(1)}
+                <span
+                  className={`tip-chip-line tip-line-${tipOption.value}`}
+                  aria-hidden="true"
+                />
+                <span>{tipOption.label}</span>
               </button>
             ))}
           </div>
@@ -1161,13 +1228,14 @@ export default function App() {
                 type="button"
                 className="style-chip-button"
                 onClick={() => applyStyle(preset)}
-                title={`${TOOL_LABELS[preset.tool]} ${preset.size.toFixed(1)}`}
+                title={`${TOOL_LABELS[preset.tool]} ${preset.size.toFixed(1)} ${preset.tip}`}
               >
                 <span
                   className="style-chip-color"
                   style={{ backgroundColor: preset.color }}
                 />
                 <span>{preset.size.toFixed(1)}</span>
+                <span>{preset.tip.slice(0, 2)}</span>
               </button>
             ))}
             <button
@@ -1345,6 +1413,7 @@ export default function App() {
               inkLineWidth={effectiveInk.lineWidth}
               inkOpacity={effectiveInk.opacity}
               inkSymbol={activeInkSymbol}
+              inkTipKind={activeTip}
               inkMode={activeInkMode}
               inkShapeKind={shapeKind}
               inkImageSrc={activeTool === "image" ? imageStampSrc : null}

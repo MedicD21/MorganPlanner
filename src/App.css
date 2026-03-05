@@ -65,6 +65,91 @@
   gap: 0.28rem;
 }
 
+.draw-weight-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #b9aea4;
+  border-radius: 999px;
+  background: #f7f3ee;
+  padding: 0.18rem 0.5rem;
+  min-width: clamp(9rem, 16vw, 12rem);
+}
+
+.draw-weight-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  color: #4b4341;
+  white-space: nowrap;
+}
+
+.draw-weight-slider {
+  flex: 1 1 auto;
+  min-width: 4.8rem;
+  accent-color: #2f2827;
+}
+
+.draw-weight-slider:disabled {
+  opacity: 0.55;
+}
+
+.draw-weight-value {
+  min-width: 1.9rem;
+  text-align: right;
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.tip-selector-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+}
+
+.tip-chip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  padding: 0.16rem 0.42rem;
+  font-size: 0.61rem;
+}
+
+.tip-chip-line {
+  width: 1.2rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.tip-line-round {
+  height: 4px;
+}
+
+.tip-line-fine {
+  height: 1px;
+}
+
+.tip-line-fountain {
+  height: 3px;
+  border-radius: 1px;
+}
+
+.tip-line-marker {
+  height: 5px;
+  border-radius: 0;
+}
+
+.tip-line-chisel {
+  height: 4px;
+  border-radius: 0;
+  transform: skewX(-18deg);
+}
+
 .styles-chip-row {
   margin-left: auto;
 }

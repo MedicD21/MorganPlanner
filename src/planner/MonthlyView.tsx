@@ -8,7 +8,7 @@ import {
   shiftMonth,
   type CalendarCell,
 } from "./generateCalendar";
-import InkLayer, { type InkInputType } from "./InkLayer";
+import InkLayer, { type InkInputType, type InkTipKind } from "./InkLayer";
 
 interface MonthlyViewProps {
   year: number;
@@ -22,6 +22,7 @@ interface MonthlyViewProps {
   inkLineWidth?: number;
   inkOpacity?: number;
   inkSymbol?: string | null;
+  inkTipKind?: InkTipKind;
   inkMode?:
     | "draw"
     | "erase"
@@ -259,6 +260,7 @@ export default function MonthlyView({
   inkLineWidth = 1.7,
   inkOpacity = 1,
   inkSymbol = null,
+  inkTipKind = "round",
   inkMode = "draw",
   inkShapeKind = "line",
   inkImageSrc = null,
@@ -522,6 +524,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
@@ -576,6 +579,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
@@ -618,6 +622,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
@@ -652,6 +657,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
@@ -687,6 +693,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
@@ -717,6 +724,7 @@ export default function MonthlyView({
               lineWidth={inkLineWidth}
               opacity={inkOpacity}
               symbol={inkSymbol}
+              tipKind={inkTipKind}
               mode={inkMode}
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
