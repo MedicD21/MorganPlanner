@@ -8,6 +8,7 @@ interface InkLayerProps {
   pageId: string;
   allowTouch?: boolean;
   onInputType?: (inputType: InkInputType) => void;
+  onPenDoubleTap?: () => void;
   color?: string;
   lineWidth?: number;
   opacity?: number;
@@ -69,6 +70,13 @@ interface InkDocument {
 interface ActiveStroke {
   pointerId: number;
   stroke: InkStroke;
+}
+
+interface PenTapCandidate {
+  pointerId: number;
+  startPoint: InkPoint;
+  moved: boolean;
+  startTime: number;
 }
 
 interface ActiveShape {
@@ -226,6 +234,96 @@ function isPointInsideRadius(
   const deltaX = x - centerX;
   const deltaY = y - centerY;
   return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+}
+
+function distancePointToSegment(
+  point: InkPoint,
+  start: InkPoint,
+  end: InkPoint,
+): number {
+  const segmentX = end.x - start.x;
+  const segmentY = end.y - start.y;
+  const segmentLengthSq = segmentX * segmentX + segmentY * segmentY;
+
+  if (segmentLengthSq < 0.0001) {
+    const dx = point.x - start.x;
+    const dy = point.y - start.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  let t =
+    ((point.x - start.x) * segmentX + (point.y - start.y) * segmentY) /
+    segmentLengthSq;
+  t = Math.max(0, Math.min(1, t));
+
+  const projectionX = start.x + t * segmentX;
+  const projectionY = start.y + t * segmentY;
+  const dx = point.x - projectionX;
+  const dy = point.y - projectionY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function eraseStrokeAtPoint(
+  stroke: InkStroke,
+  point: InkPoint,
+  radius: number,
+): InkStroke[] {
+  if (!stroke.points.length) {
+    return [];
+  }
+
+  if (stroke.points.length === 1) {
+    const single = stroke.points[0];
+    if (isPointInsideRadius(single.x, single.y, point.x, point.y, radius)) {
+      return [];
+    }
+    return [stroke];
+  }
+
+  const erased = new Array<boolean>(stroke.points.length).fill(false);
+
+  for (let i = 0; i < stroke.points.length; i += 1) {
+    const candidate = stroke.points[i];
+    if (isPointInsideRadius(candidate.x, candidate.y, point.x, point.y, radius)) {
+      erased[i] = true;
+    }
+  }
+
+  for (let i = 0; i < stroke.points.length - 1; i += 1) {
+    const start = stroke.points[i];
+    const end = stroke.points[i + 1];
+    if (distancePointToSegment(point, start, end) <= radius) {
+      erased[i] = true;
+      erased[i + 1] = true;
+    }
+  }
+
+  const splitStrokes: InkStroke[] = [];
+  let currentChunk: InkPoint[] = [];
+
+  for (let i = 0; i < stroke.points.length; i += 1) {
+    if (erased[i]) {
+      if (currentChunk.length > 0) {
+        splitStrokes.push({
+          ...stroke,
+          points: currentChunk,
+        });
+      }
+      currentChunk = [];
+      continue;
+    }
+
+    currentChunk = [...currentChunk, stroke.points[i]];
+  }
+
+  if (currentChunk.length > 0) {
+    splitStrokes.push({
+      ...stroke,
+      points: currentChunk,
+    });
+  }
+
+  return splitStrokes;
 }
 
 function makeRectFromPoints(start: InkPoint, end: InkPoint): InkClipRect {
@@ -399,6 +497,7 @@ export default function InkLayer({
   pageId,
   allowTouch = false,
   onInputType,
+  onPenDoubleTap,
   color = "#2f2b2a",
   lineWidth = 1.7,
   opacity = 1,
@@ -425,6 +524,9 @@ export default function InkLayer({
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const pointerFromTouchIdRef = useRef<Map<number, number>>(new Map());
   const nextTouchPointerIdRef = useRef<number>(40000);
+  const activePenTapCandidateRef = useRef<PenTapCandidate | null>(null);
+  const lastPenTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastPenTapArtifactRef = useRef<{ index: number; time: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -660,11 +762,11 @@ export default function InkLayer({
 
     const eraseAtPoint = (point: InkPoint) => {
       const radius = Math.max(6, eraseRadius);
-      const nextStrokes = strokesRef.current.filter((stroke) => {
-        return !stroke.points.some((strokePoint) =>
-          isPointInsideRadius(strokePoint.x, strokePoint.y, point.x, point.y, radius),
-        );
-      });
+      const nextStrokes: InkStroke[] = [];
+      for (const stroke of strokesRef.current) {
+        const remaining = eraseStrokeAtPoint(stroke, point, radius);
+        nextStrokes.push(...remaining);
+      }
 
       const nextSymbols = symbolsRef.current.filter(
         (currentSymbol) =>
@@ -809,6 +911,48 @@ export default function InkLayer({
       }
     };
 
+    const updatePenTapMovement = (pointerId: number, point: InkPoint) => {
+      const candidate = activePenTapCandidateRef.current;
+      if (!candidate || candidate.pointerId !== pointerId || candidate.moved) {
+        return;
+      }
+
+      const deltaX = point.x - candidate.startPoint.x;
+      const deltaY = point.y - candidate.startPoint.y;
+      if (deltaX * deltaX + deltaY * deltaY > 36) {
+        candidate.moved = true;
+      }
+    };
+
+    const handlePenTapEnd = (pointerId: number, point: InkPoint): boolean => {
+      const candidate = activePenTapCandidateRef.current;
+      if (!candidate || candidate.pointerId !== pointerId) {
+        return false;
+      }
+
+      activePenTapCandidateRef.current = null;
+
+      if (candidate.moved || Date.now() - candidate.startTime > 300) {
+        return false;
+      }
+
+      const previousTap = lastPenTapRef.current;
+      const now = Date.now();
+      if (previousTap) {
+        const deltaT = now - previousTap.time;
+        const deltaX = point.x - previousTap.x;
+        const deltaY = point.y - previousTap.y;
+        if (deltaT < 360 && deltaX * deltaX + deltaY * deltaY < 900) {
+          lastPenTapRef.current = null;
+          onPenDoubleTap?.();
+          return true;
+        }
+      }
+
+      lastPenTapRef.current = { x: point.x, y: point.y, time: now };
+      return false;
+    };
+
     const onStart = (event: PointerLikeEvent) => {
       if (!canDrawWithInput(event.pointerType)) {
         return;
@@ -829,6 +973,17 @@ export default function InkLayer({
       onInputType?.(event.pointerType);
       const rect = canvas.getBoundingClientRect();
       const point = getRelativePoint(event, rect);
+
+      if (event.pointerType === "pen") {
+        activePenTapCandidateRef.current = {
+          pointerId: event.pointerId,
+          startPoint: point,
+          moved: false,
+          startTime: Date.now(),
+        };
+      } else {
+        activePenTapCandidateRef.current = null;
+      }
 
       if (mode === "erase") {
         activeEraserPointerIdRef.current = event.pointerId;
@@ -938,6 +1093,7 @@ export default function InkLayer({
       if (activeEraserPointerIdRef.current === event.pointerId) {
         const rect = canvas.getBoundingClientRect();
         const point = getRelativePoint(event, rect);
+        updatePenTapMovement(event.pointerId, point);
         eraseAtPoint(point);
         event.preventDefault();
         return;
@@ -947,6 +1103,7 @@ export default function InkLayer({
       if (activeShape && activeShape.pointerId === event.pointerId) {
         const rect = canvas.getBoundingClientRect();
         activeShape.current = getRelativePoint(event, rect);
+        updatePenTapMovement(event.pointerId, activeShape.current);
         redraw();
         event.preventDefault();
         return;
@@ -961,6 +1118,7 @@ export default function InkLayer({
 
         const rect = canvas.getBoundingClientRect();
         const currentPoint = getRelativePoint(event, rect);
+        updatePenTapMovement(event.pointerId, currentPoint);
         const deltaX = currentPoint.x - activeLassoDrag.lastPoint.x;
         const deltaY = currentPoint.y - activeLassoDrag.lastPoint.y;
         moveSelectionBy(selection, deltaX, deltaY);
@@ -978,6 +1136,7 @@ export default function InkLayer({
       if (activeLasso && activeLasso.pointerId === event.pointerId) {
         const rect = canvas.getBoundingClientRect();
         activeLasso.current = getRelativePoint(event, rect);
+        updatePenTapMovement(event.pointerId, activeLasso.current);
         redraw();
         event.preventDefault();
         return;
@@ -989,12 +1148,19 @@ export default function InkLayer({
       }
 
       const rect = canvas.getBoundingClientRect();
-      activeStroke.stroke.points.push(getRelativePoint(event, rect));
+      const latestPoint = getRelativePoint(event, rect);
+      updatePenTapMovement(event.pointerId, latestPoint);
+      activeStroke.stroke.points.push(latestPoint);
       drawStrokeSegment(activeStroke.stroke);
       event.preventDefault();
     };
 
     const onEnd = (event: PointerLikeEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const endPoint = getRelativePoint(event, rect);
+      const isPenDoubleTap =
+        event.pointerType === "pen" && handlePenTapEnd(event.pointerId, endPoint);
+
       if (activeEraserPointerIdRef.current === event.pointerId) {
         activeEraserPointerIdRef.current = null;
         return;
@@ -1048,8 +1214,33 @@ export default function InkLayer({
         return;
       }
 
-      if (activeStroke.stroke.points.length) {
+      if (isPenDoubleTap) {
+        const lastArtifact = lastPenTapArtifactRef.current;
+        if (lastArtifact && Date.now() - lastArtifact.time < 520) {
+          const maybeStroke = strokesRef.current[lastArtifact.index];
+          if (maybeStroke && maybeStroke.points.length <= 2) {
+            strokesRef.current = strokesRef.current.filter(
+              (_, index) => index !== lastArtifact.index,
+            );
+            persistInk();
+          }
+        }
+        lastPenTapArtifactRef.current = null;
+      }
+
+      if (!isPenDoubleTap && activeStroke.stroke.points.length) {
         strokesRef.current = [...strokesRef.current, activeStroke.stroke];
+        if (
+          event.pointerType === "pen" &&
+          activeStroke.stroke.points.length <= 2
+        ) {
+          lastPenTapArtifactRef.current = {
+            index: strokesRef.current.length - 1,
+            time: Date.now(),
+          };
+        } else {
+          lastPenTapArtifactRef.current = null;
+        }
         persistInk();
       }
 
@@ -1196,6 +1387,9 @@ export default function InkLayer({
     activeLassoRef.current = null;
     activeLassoDragRef.current = null;
     lassoSelectionRef.current = null;
+    activePenTapCandidateRef.current = null;
+    lastPenTapRef.current = null;
+    lastPenTapArtifactRef.current = null;
 
     try {
       const raw = localStorage.getItem(storageKey(pageId));
@@ -1252,6 +1446,7 @@ export default function InkLayer({
     lockToCells,
     mode,
     onInputType,
+    onPenDoubleTap,
     opacity,
     pageId,
     shapeKind,

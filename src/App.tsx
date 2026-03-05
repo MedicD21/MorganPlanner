@@ -90,6 +90,92 @@ const SYMBOL_OPTIONS: SymbolOption[] = [
   { label: "Heart", value: "♥" },
 ];
 
+function ToolIcon({ tool }: { tool: InkTool }) {
+  if (tool === "pen") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M5 19l4-1 8-8-3-3-8 8-1 4z" />
+        <path d="M13 6l3 3" />
+      </svg>
+    );
+  }
+
+  if (tool === "pencil") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M4 17l3 3 11-11-3-3L4 17z" />
+        <path d="M3 21l4-1-3-3-1 4z" />
+      </svg>
+    );
+  }
+
+  if (tool === "highlighter") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M6 7h8l3 3v7H6z" />
+        <path d="M6 14h11" />
+      </svg>
+    );
+  }
+
+  if (tool === "eraser") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M6 15l6-8 7 5-6 8H6z" />
+        <path d="M4 19h16" />
+      </svg>
+    );
+  }
+
+  if (tool === "shape") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <rect x="3.5" y="4.5" width="8" height="8" rx="1" />
+        <circle cx="16.5" cy="16.5" r="4" />
+      </svg>
+    );
+  }
+
+  if (tool === "lasso") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M5 9c0-3 3-5 7-5s7 2 7 5-3 5-7 5-7-2-7-5z" />
+        <path d="M12 14v4c0 1-1 2-2 2" />
+      </svg>
+    );
+  }
+
+  if (tool === "elements") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path
+          d="M12 4l2.2 4.7 5.1.7-3.7 3.6.9 5.1-4.5-2.4-4.5 2.4.9-5.1-3.7-3.6 5.1-.7z"
+          fill="currentColor"
+          stroke="none"
+        />
+      </svg>
+    );
+  }
+
+  if (tool === "text") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M4 6h16" />
+        <path d="M12 6v13" />
+        <path d="M8 19h8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="M6 16l4-4 3 3 3-5 2 6" />
+      <circle cx="8" cy="9" r="1.4" />
+    </svg>
+  );
+}
+
 function readStorage<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -225,6 +311,7 @@ export default function App() {
     loadFavoriteStyles,
   );
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const lastNonEraserToolRef = useRef<InkTool>("pen");
 
   const effectiveInk = useMemo(() => {
     if (activeTool === "eraser") {
@@ -306,6 +393,12 @@ export default function App() {
   }, [favoriteStyles]);
 
   useEffect(() => {
+    if (activeTool !== "eraser") {
+      lastNonEraserToolRef.current = activeTool;
+    }
+  }, [activeTool]);
+
+  useEffect(() => {
     // Keep the app fixed in-place on iPad while preserving pinch zoom.
     const preventSingleFingerPan = (event: TouchEvent) => {
       if (event.touches.length === 1) {
@@ -340,6 +433,20 @@ export default function App() {
     ) {
       setActiveSymbol("");
     }
+  };
+
+  const toggleEraserFromPencilDoubleTap = () => {
+    setActiveTool((currentTool) => {
+      if (currentTool === "eraser") {
+        return lastNonEraserToolRef.current === "eraser"
+          ? "pen"
+          : lastNonEraserToolRef.current;
+      }
+
+      lastNonEraserToolRef.current = currentTool;
+      return "eraser";
+    });
+    setActiveSymbol("");
   };
 
   const saveCurrentColor = () => {
@@ -442,14 +549,18 @@ export default function App() {
                 key={tool}
                 type="button"
                 className={
-                  tool === activeTool ? "toolbar-button active" : "toolbar-button"
+                  tool === activeTool
+                    ? "toolbar-button toolbar-icon-button active"
+                    : "toolbar-button toolbar-icon-button"
                 }
                 onClick={() => {
                   setTool(tool);
                 }}
                 title={TOOL_LABELS[tool]}
+                aria-label={TOOL_LABELS[tool]}
               >
-                {TOOL_LABELS[tool]}
+                <ToolIcon tool={tool} />
+                <span className="sr-only">{TOOL_LABELS[tool]}</span>
               </button>
             ))}
           </div>
@@ -656,6 +767,7 @@ export default function App() {
             inkShapeKind={shapeKind}
             inkImageSrc={activeTool === "image" ? imageStampSrc : null}
             inkEraseRadius={eraseRadius}
+            onPenDoubleTap={toggleEraserFromPencilDoubleTap}
             onMonthChange={handleMonthTabChange}
             onWeekIndexChange={handleWeekTabChange}
           />

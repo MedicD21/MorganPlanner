@@ -15,7 +15,7 @@
   --shell-pad-x: clamp(0.5rem, 1.6vw, 1.25rem);
   --shell-pad-y: clamp(0.5rem, 2vw, 1.25rem);
   --layout-gap: clamp(0.5rem, 1vw, 1rem);
-  --toolbar-reserve: clamp(96px, 18vh, 172px);
+  --toolbar-reserve: clamp(78px, 13vh, 124px);
   position: fixed;
   inset: 0;
   width: 100%;
@@ -169,7 +169,7 @@
   min-height: 0;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow: visible;
   touch-action: none;
 }
 
@@ -237,6 +237,38 @@
   text-transform: uppercase;
   padding: 0.2rem 0.28rem;
   cursor: pointer;
+}
+
+.toolbar-icon-button {
+  width: 2rem;
+  height: 1.9rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-icon-svg {
+  width: 1.08rem;
+  height: 1.08rem;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  border: 0;
+  padding: 0;
+  white-space: nowrap;
+  clip-path: inset(50%);
+  clip: rect(0 0 0 0);
+  overflow: hidden;
 }
 
 .toolbar-button.active {
@@ -398,18 +430,18 @@
 .planner-previews {
   position: relative;
   width: min(
-    1280px,
+    1480px,
     calc(100vw - (var(--shell-pad-x) * 2)),
-    calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * (4 / 3))
+    calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * 1.56)
   );
   height: min(
     calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
-    calc((100vw - (var(--shell-pad-x) * 2)) * (3 / 4))
+    calc((100vw - (var(--shell-pad-x) * 2)) * 0.64)
   );
   max-width: 100%;
   max-height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   touch-action: none;
 }
 
@@ -802,7 +834,7 @@
 }
 
 .todo-month-panel .month-tabs-right {
-  right: -1rem;
+  right: 0.08rem;
   top: 0.4rem;
   bottom: 0.4rem;
 }
@@ -865,7 +897,7 @@
 }
 
 .notes-dotted-paper .month-tabs-right {
-  right: -1rem;
+  right: 0.08rem;
   top: 0.4rem;
   bottom: 0.4rem;
 }
@@ -885,12 +917,12 @@
 }
 
 .month-tabs-right {
-  right: -1.1rem;
+  right: 0.08rem;
   grid-template-rows: repeat(13, 1fr);
 }
 
 .month-tab {
-  width: 1rem;
+  width: 1.06rem;
   background: var(--tab);
   border: 1px solid #b8b0a8;
   border-left: none;
@@ -936,7 +968,7 @@
 
 @media screen and (max-width: 1200px) {
   .app-shell {
-    --toolbar-reserve: clamp(108px, 20vh, 192px);
+    --toolbar-reserve: clamp(86px, 14vh, 138px);
   }
 }
 
@@ -953,15 +985,15 @@
   }
 
   .planner-previews {
-    max-width: min(1120px, 100%);
+    max-width: min(1240px, 100%);
     width: min(
-      1120px,
+      1240px,
       calc(100vw - (var(--shell-pad-x) * 2)),
-      calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * (4 / 3))
+      calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * 1.56)
     );
     height: min(
       calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
-      calc((100vw - (var(--shell-pad-x) * 2)) * (3 / 4))
+      calc((100vw - (var(--shell-pad-x) * 2)) * 0.64)
     );
   }
 }

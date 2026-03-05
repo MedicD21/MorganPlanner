@@ -27,6 +27,7 @@ interface MonthlyViewProps {
   inkImageSrc?: string | null;
   inkEraseRadius?: number;
   onInkInputType?: (inputType: InkInputType) => void;
+  onPenDoubleTap?: () => void;
   onMonthChange?: (month: number) => void;
   onWeekIndexChange?: (weekIndex: number) => void;
 }
@@ -257,6 +258,7 @@ export default function MonthlyView({
   inkImageSrc = null,
   inkEraseRadius = 14,
   onInkInputType,
+  onPenDoubleTap,
   onMonthChange,
   onWeekIndexChange,
 }: MonthlyViewProps) {
@@ -272,6 +274,11 @@ export default function MonthlyView({
   const nextMonth = shiftMonth(year, month, 1);
   const monthAfterNext = shiftMonth(year, month, 2);
   const weekSwipeStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const monthSwipeStartRef = useRef<{
     pointerId: number;
     startX: number;
     startY: number;
@@ -391,6 +398,57 @@ export default function MonthlyView({
     weekSwipeStartRef.current = null;
   };
 
+  const handleMonthSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    if (event.target instanceof HTMLElement) {
+      if (event.target.closest("a, button")) {
+        return;
+      }
+    }
+
+    monthSwipeStartRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+
+  const handleMonthSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
+    const swipeStart = monthSwipeStartRef.current;
+    if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
+      return;
+    }
+
+    monthSwipeStartRef.current = null;
+
+    const deltaX = event.clientX - swipeStart.startX;
+    const deltaY = event.clientY - swipeStart.startY;
+    const isVerticalSwipe =
+      Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
+    if (!isVerticalSwipe || !onMonthChange) {
+      return;
+    }
+
+    const nextMonth =
+      deltaY < 0
+        ? month === 12
+          ? 1
+          : month + 1
+        : month === 1
+          ? 12
+          : month - 1;
+
+    onMonthChange(nextMonth);
+    updateHash(`#${getMonthWeekId(pageSet, nextMonth, 0)}`);
+  };
+
+  const clearMonthSwipe = () => {
+    monthSwipeStartRef.current = null;
+  };
+
   return (
     <div className="planner-previews">
       {showMonthWeek ? (
@@ -398,7 +456,12 @@ export default function MonthlyView({
           id={monthWeekId}
           className={activeView === "month-week" ? "planner-spread is-active" : "planner-spread"}
         >
-          <article className="planner-paper month-paper">
+          <article
+            className="planner-paper month-paper"
+            onPointerDown={handleMonthSwipeStart}
+            onPointerUp={handleMonthSwipeEnd}
+            onPointerCancel={clearMonthSwipe}
+          >
             <header className="month-header">
               <div className="month-number">{month}</div>
 
@@ -458,8 +521,8 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
-              lockToCells
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
 
@@ -513,8 +576,8 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
-              lockToCells
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
         </section>
@@ -557,6 +620,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
 
@@ -591,6 +655,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
         </section>
@@ -626,6 +691,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
 
@@ -656,6 +722,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onPenDoubleTap={onPenDoubleTap}
             />
           </article>
         </section>
