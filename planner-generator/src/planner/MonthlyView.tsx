@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MONTH_NAMES,
   WEEKDAY_INITIALS,
@@ -37,6 +37,8 @@ interface MonthTabsProps {
   side: "left" | "right";
   pageSet: string;
   onMonthChange?: (month: number) => void;
+  onOpenMonthWeek?: () => void;
+  onOpenNotes?: () => void;
 }
 
 interface WeekTabsProps {
@@ -48,6 +50,7 @@ interface WeekTabsProps {
 }
 
 const NOTES_RULED_LINE_COUNT = 24;
+type SpreadView = "month-week" | "planning" | "notes";
 
 function getMonthWeekId(
   pageSet: string,
@@ -115,6 +118,8 @@ function MonthTabs({
   side,
   pageSet,
   onMonthChange,
+  onOpenMonthWeek,
+  onOpenNotes,
 }: MonthTabsProps) {
   return (
     <div className={`month-tabs month-tabs-${side}`} aria-label="Month tabs">
@@ -131,6 +136,7 @@ function MonthTabs({
             onClick={
               onMonthChange
                 ? () => {
+                    onOpenMonthWeek?.();
                     onMonthChange(monthValue);
                   }
                 : undefined
@@ -147,6 +153,9 @@ function MonthTabs({
         <a
           className="month-tab month-tab-notes"
           href={`#${getNotesPageId(pageSet, activeMonth)}`}
+          onClick={() => {
+            onOpenNotes?.();
+          }}
           title="Go to notes"
         >
           NOTES
@@ -231,6 +240,7 @@ export default function MonthlyView({
   onMonthChange,
   onWeekIndexChange,
 }: MonthlyViewProps) {
+  const [activeView, setActiveView] = useState<SpreadView>("month-week");
   const calendarData = generateCalendar(year, month);
   const safeWeekIndex = Math.max(
     0,
@@ -249,13 +259,73 @@ export default function MonthlyView({
 
   const weekTitle = formatWeekRange(selectedWeek);
 
-  if (!showMonthWeek && !showNotes) {
-    return null;
-  }
-
   const monthWeekId = getMonthWeekId(pageSet, month, safeWeekIndex);
   const planningId = getPlanningId(pageSet, month);
   const notesPageId = getNotesPageId(pageSet, month);
+
+  useEffect(() => {
+    const parseHash = () => {
+      const hash = window.location.hash;
+
+      if (!hash) {
+        setActiveView("month-week");
+        return;
+      }
+
+      if (hash === `#${planningId}`) {
+        setActiveView("planning");
+        return;
+      }
+
+      if (hash === `#${notesPageId}`) {
+        setActiveView("notes");
+        return;
+      }
+
+      const escapedPageSet = pageSet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const monthWeekPattern = new RegExp(`^#${escapedPageSet}-month-(\\d+)-week-(\\d+)$`);
+      const match = hash.match(monthWeekPattern);
+
+      if (!match) {
+        setActiveView("month-week");
+        return;
+      }
+
+      const hashMonth = Number.parseInt(match[1], 10);
+      const hashWeek = Number.parseInt(match[2], 10);
+      const clampedWeek = Math.max(0, Math.min(calendarData.weeks.length - 1, hashWeek));
+
+      setActiveView("month-week");
+
+      if (Number.isFinite(hashMonth) && hashMonth >= 1 && hashMonth <= 12 && hashMonth !== month) {
+        onMonthChange?.(hashMonth);
+      }
+
+      if (Number.isFinite(clampedWeek) && clampedWeek !== safeWeekIndex) {
+        onWeekIndexChange?.(clampedWeek);
+      }
+    };
+
+    parseHash();
+    window.addEventListener("hashchange", parseHash);
+
+    return () => {
+      window.removeEventListener("hashchange", parseHash);
+    };
+  }, [
+    calendarData.weeks.length,
+    month,
+    notesPageId,
+    onMonthChange,
+    onWeekIndexChange,
+    pageSet,
+    planningId,
+    safeWeekIndex,
+  ]);
+
+  if (!showMonthWeek && !showNotes) {
+    return null;
+  }
 
   const handleWeekSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType !== "touch") {
@@ -302,7 +372,10 @@ export default function MonthlyView({
   return (
     <div className="planner-previews">
       {showMonthWeek ? (
-        <section id={monthWeekId} className="planner-spread">
+        <section
+          id={monthWeekId}
+          className={activeView === "month-week" ? "planner-spread is-active" : "planner-spread"}
+        >
           <article className="planner-paper month-paper">
             <header className="month-header">
               <div className="month-number">{month}</div>
@@ -375,6 +448,12 @@ export default function MonthlyView({
               side="right"
               pageSet={pageSet}
               onMonthChange={onMonthChange}
+              onOpenMonthWeek={() => {
+                setActiveView("month-week");
+              }}
+              onOpenNotes={() => {
+                setActiveView("notes");
+              }}
             />
             <header className="week-header">{weekTitle}</header>
             <WeekTabs
@@ -387,6 +466,9 @@ export default function MonthlyView({
             <a
               className="spread-link to-planning-link"
               href={`#${planningId}`}
+              onClick={() => {
+                setActiveView("planning");
+              }}
               title="Go to planning page"
             >
               to do page
@@ -407,7 +489,14 @@ export default function MonthlyView({
       ) : null}
 
       {showNotes ? (
-        <section id={planningId} className="planner-spread notes-spread">
+        <section
+          id={planningId}
+          className={
+            activeView === "planning"
+              ? "planner-spread notes-spread is-active"
+              : "planner-spread notes-spread"
+          }
+        >
           <article className="planner-paper notes-left-paper">
             <div className="notes-left-top">
               <span>to do today</span>
@@ -445,6 +534,12 @@ export default function MonthlyView({
                   side="right"
                   pageSet={pageSet}
                   onMonthChange={onMonthChange}
+                  onOpenMonthWeek={() => {
+                    setActiveView("month-week");
+                  }}
+                  onOpenNotes={() => {
+                    setActiveView("notes");
+                  }}
                 />
               </div>
             </div>
@@ -462,7 +557,14 @@ export default function MonthlyView({
       ) : null}
 
       {showNotes ? (
-        <section id={notesPageId} className="planner-spread notes-page-spread">
+        <section
+          id={notesPageId}
+          className={
+            activeView === "notes"
+              ? "planner-spread notes-page-spread is-active"
+              : "planner-spread notes-page-spread"
+          }
+        >
           <article className="planner-paper notes-ruled-paper">
             <header className="notes-page-header">notes</header>
             <div className="ruled-notes-body">
@@ -491,6 +593,12 @@ export default function MonthlyView({
               side="right"
               pageSet={pageSet}
               onMonthChange={onMonthChange}
+              onOpenMonthWeek={() => {
+                setActiveView("month-week");
+              }}
+              onOpenNotes={() => {
+                setActiveView("notes");
+              }}
             />
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-notes-right`}
