@@ -39,11 +39,21 @@ interface WeekTabsProps {
   onWeekIndexChange?: (weekIndex: number) => void;
 }
 
-function getMonthWeekId(pageSet: string, month: number, weekIndex: number): string {
+const NOTES_RULED_LINE_COUNT = 24;
+
+function getMonthWeekId(
+  pageSet: string,
+  month: number,
+  weekIndex: number,
+): string {
   return `${pageSet}-month-${month}-week-${weekIndex}`;
 }
 
-function getNotesId(pageSet: string, month: number): string {
+function getPlanningId(pageSet: string, month: number): string {
+  return `${pageSet}-month-${month}-planning`;
+}
+
+function getNotesPageId(pageSet: string, month: number): string {
   return `${pageSet}-month-${month}-notes`;
 }
 
@@ -66,7 +76,10 @@ function MiniCalendar({ year, month }: MiniCalendarProps) {
   const data = generateCalendar(year, month);
 
   return (
-    <div className="mini-calendar" aria-label={`${data.monthName} ${data.year}`}>
+    <div
+      className="mini-calendar"
+      aria-label={`${data.monthName} ${data.year}`}
+    >
       <div className="mini-calendar-title">{data.monthName.toUpperCase()}</div>
       <div className="mini-calendar-weekdays">
         {WEEKDAY_INITIALS.map((day) => (
@@ -89,7 +102,12 @@ function MiniCalendar({ year, month }: MiniCalendarProps) {
   );
 }
 
-function MonthTabs({ activeMonth, side, pageSet, onMonthChange }: MonthTabsProps) {
+function MonthTabs({
+  activeMonth,
+  side,
+  pageSet,
+  onMonthChange,
+}: MonthTabsProps) {
   return (
     <div className={`month-tabs month-tabs-${side}`} aria-label="Month tabs">
       {MONTH_NAMES.map((name, index) => {
@@ -119,7 +137,11 @@ function MonthTabs({ activeMonth, side, pageSet, onMonthChange }: MonthTabsProps
       })}
 
       {side === "right" ? (
-        <a className="month-tab month-tab-notes" href={`#${getNotesId(pageSet, activeMonth)}`} title="Go to notes">
+        <a
+          className="month-tab month-tab-notes"
+          href={`#${getNotesPageId(pageSet, activeMonth)}`}
+          title="Go to notes"
+        >
           NOTES
         </a>
       ) : null}
@@ -127,7 +149,13 @@ function MonthTabs({ activeMonth, side, pageSet, onMonthChange }: MonthTabsProps
   );
 }
 
-function WeekTabs({ weeks, activeWeekIndex, month, pageSet, onWeekIndexChange }: WeekTabsProps) {
+function WeekTabs({
+  weeks,
+  activeWeekIndex,
+  month,
+  pageSet,
+  onWeekIndexChange,
+}: WeekTabsProps) {
   const isInteractive = typeof onWeekIndexChange === "function";
 
   return (
@@ -170,7 +198,10 @@ function WeekTabs({ weeks, activeWeekIndex, month, pageSet, onWeekIndexChange }:
 
 function renderWeeklyRows(week: CalendarCell[]) {
   return week.map((cell, index) => (
-    <div key={`${cell.year}-${cell.month}-${cell.dayNumber}-${index}`} className="weekly-row">
+    <div
+      key={`${cell.year}-${cell.month}-${cell.dayNumber}-${index}`}
+      className="weekly-row"
+    >
       <div className="weekly-row-label">{`${cell.dayNumber} ${WEEKDAY_SHORT[index]}`}</div>
     </div>
   ));
@@ -187,8 +218,12 @@ export default function MonthlyView({
   onWeekIndexChange,
 }: MonthlyViewProps) {
   const calendarData = generateCalendar(year, month);
-  const safeWeekIndex = Math.max(0, Math.min(weekIndex, calendarData.weeks.length - 1));
-  const selectedWeek = calendarData.weeks[safeWeekIndex] ?? calendarData.weeks[0];
+  const safeWeekIndex = Math.max(
+    0,
+    Math.min(weekIndex, calendarData.weeks.length - 1),
+  );
+  const selectedWeek =
+    calendarData.weeks[safeWeekIndex] ?? calendarData.weeks[0];
 
   const nextMonth = shiftMonth(year, month, 1);
   const monthAfterNext = shiftMonth(year, month, 2);
@@ -200,7 +235,8 @@ export default function MonthlyView({
   }
 
   const monthWeekId = getMonthWeekId(pageSet, month, safeWeekIndex);
-  const notesId = getNotesId(pageSet, month);
+  const planningId = getPlanningId(pageSet, month);
+  const notesPageId = getNotesPageId(pageSet, month);
 
   return (
     <div className="planner-previews">
@@ -213,7 +249,12 @@ export default function MonthlyView({
           data-planner-kind="month-week"
         >
           <article className="planner-paper month-paper">
-            <MonthTabs activeMonth={month} side="left" pageSet={pageSet} onMonthChange={onMonthChange} />
+            <MonthTabs
+              activeMonth={month}
+              side="left"
+              pageSet={pageSet}
+              onMonthChange={onMonthChange}
+            />
 
             <header className="month-header">
               <div className="month-number">{month}</div>
@@ -235,7 +276,10 @@ export default function MonthlyView({
 
               <div className="mini-calendars-wrap">
                 <MiniCalendar year={nextMonth.year} month={nextMonth.month} />
-                <MiniCalendar year={monthAfterNext.year} month={monthAfterNext.month} />
+                <MiniCalendar
+                  year={monthAfterNext.year}
+                  month={monthAfterNext.month}
+                />
               </div>
             </header>
 
@@ -250,9 +294,14 @@ export default function MonthlyView({
                 {calendarData.weeks.map((week, rowIndex) =>
                   week.map((cell, colIndex) => {
                     const isActiveWeek = rowIndex === safeWeekIndex;
-                    const isInteractiveCell = typeof onWeekIndexChange === "function";
+                    const isInteractiveCell =
+                      typeof onWeekIndexChange === "function";
 
-                    const classNames = [cell.inMonth ? "calendar-cell" : "calendar-cell outside-month"];
+                    const classNames = [
+                      cell.inMonth
+                        ? "calendar-cell"
+                        : "calendar-cell outside-month",
+                    ];
                     if (isActiveWeek) {
                       classNames.push("active-week");
                     }
@@ -264,11 +313,18 @@ export default function MonthlyView({
                       <div
                         key={`${rowIndex}-${colIndex}-${cell.year}-${cell.month}-${cell.dayNumber}`}
                         className={classNames.join(" ")}
-                        onClick={isInteractiveCell ? () => onWeekIndexChange(rowIndex) : undefined}
+                        onClick={
+                          isInteractiveCell
+                            ? () => onWeekIndexChange(rowIndex)
+                            : undefined
+                        }
                         onKeyDown={
                           isInteractiveCell
                             ? (event) => {
-                                if (event.key === "Enter" || event.key === " ") {
+                                if (
+                                  event.key === "Enter" ||
+                                  event.key === " "
+                                ) {
                                   event.preventDefault();
                                   onWeekIndexChange(rowIndex);
                                 }
@@ -277,7 +333,11 @@ export default function MonthlyView({
                         }
                         role={isInteractiveCell ? "button" : undefined}
                         tabIndex={isInteractiveCell ? 0 : undefined}
-                        title={isInteractiveCell ? `Set week to ${formatWeekRange(week)}` : undefined}
+                        title={
+                          isInteractiveCell
+                            ? `Set week to ${formatWeekRange(week)}`
+                            : undefined
+                        }
                       >
                         <span>{cell.dayNumber}</span>
                       </div>
@@ -289,6 +349,12 @@ export default function MonthlyView({
           </article>
 
           <article className="planner-paper week-paper">
+            <MonthTabs
+              activeMonth={month}
+              side="right"
+              pageSet={pageSet}
+              onMonthChange={onMonthChange}
+            />
             <header className="week-header">{weekTitle}</header>
             <WeekTabs
               weeks={calendarData.weeks}
@@ -297,6 +363,13 @@ export default function MonthlyView({
               pageSet={pageSet}
               onWeekIndexChange={onWeekIndexChange}
             />
+            <a
+              className="spread-link to-planning-link"
+              href={`#${planningId}`}
+              title="Go to planning page"
+            >
+              my to do
+            </a>
             <div className="week-lines">{renderWeeklyRows(selectedWeek)}</div>
           </article>
         </section>
@@ -304,11 +377,11 @@ export default function MonthlyView({
 
       {showNotes ? (
         <section
-          id={notesId}
+          id={planningId}
           className="planner-spread notes-spread planner-print-page"
           data-planner-page
           data-planner-set={pageSet}
-          data-planner-kind="notes"
+          data-planner-kind="planning"
         >
           <article className="planner-paper notes-left-paper">
             <div className="notes-left-top">
@@ -341,6 +414,38 @@ export default function MonthlyView({
                 />
               </div>
             </div>
+          </article>
+        </section>
+      ) : null}
+
+      {showNotes ? (
+        <section
+          id={notesPageId}
+          className="planner-spread notes-page-spread planner-print-page"
+          data-planner-page
+          data-planner-set={pageSet}
+          data-planner-kind="notes"
+        >
+          <article className="planner-paper notes-ruled-paper">
+            <header className="notes-page-header">notes</header>
+            <div className="ruled-notes-body">
+              {Array.from({ length: NOTES_RULED_LINE_COUNT }).map(
+                (_, index) => (
+                  <div key={`ruled-line-${index}`} className="ruled-line" />
+                ),
+              )}
+            </div>
+          </article>
+
+          <article className="planner-paper notes-dotted-paper">
+            <header className="notes-page-header">ideas</header>
+            <div className="dotted-notes-body" />
+            <MonthTabs
+              activeMonth={month}
+              side="right"
+              pageSet={pageSet}
+              onMonthChange={onMonthChange}
+            />
           </article>
         </section>
       ) : null}
