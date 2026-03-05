@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import "./App.css";
 import MonthlyView from "./planner/MonthlyView";
 
@@ -23,8 +29,15 @@ const DEFAULT_COLOR_PALETTE = [
 ];
 const SIZE_PRESETS = [1.1, 2.1, 3.1, 4.2];
 
-type DrawingTool = "pen" | "pencil" | "highlighter";
-type InkTool = DrawingTool | "eraser";
+type ShapeKind = "line" | "rectangle" | "ellipse";
+type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
+type InkTool =
+  | DrawingTool
+  | "eraser"
+  | "lasso"
+  | "elements"
+  | "text"
+  | "image";
 
 interface FavoriteStyle {
   id: string;
@@ -43,7 +56,30 @@ const TOOL_LABELS: Record<InkTool, string> = {
   pencil: "Pencil",
   highlighter: "Highlighter",
   eraser: "Eraser",
+  shape: "Shape",
+  lasso: "Lasso",
+  elements: "Elements",
+  text: "Text",
+  image: "Image",
 };
+
+const TOOL_SEQUENCE: InkTool[] = [
+  "pen",
+  "pencil",
+  "highlighter",
+  "eraser",
+  "shape",
+  "lasso",
+  "elements",
+  "text",
+  "image",
+];
+
+const SHAPE_OPTIONS: Array<{ label: string; value: ShapeKind }> = [
+  { label: "Line", value: "line" },
+  { label: "Rect", value: "rectangle" },
+  { label: "Oval", value: "ellipse" },
+];
 
 const SYMBOL_OPTIONS: SymbolOption[] = [
   { label: "Draw", value: "" },
@@ -75,6 +111,15 @@ function clampStrokeSize(value: number): number {
     return DEFAULT_STROKE_SIZE;
   }
   return Math.min(Math.max(value, 0.8), 4.8);
+}
+
+function isDrawingTool(tool: InkTool): tool is DrawingTool {
+  return (
+    tool === "pen" ||
+    tool === "pencil" ||
+    tool === "highlighter" ||
+    tool === "shape"
+  );
 }
 
 function loadFavoriteColors(): string[] {
@@ -109,7 +154,12 @@ function loadFavoriteStyles(): FavoriteStyle[] {
     return [];
   }
 
-  const validTools = new Set<DrawingTool>(["pen", "pencil", "highlighter"]);
+  const validTools = new Set<DrawingTool>([
+    "pen",
+    "pencil",
+    "highlighter",
+    "shape",
+  ]);
   const styles: FavoriteStyle[] = [];
 
   for (const entry of raw) {
@@ -144,7 +194,11 @@ function loadFavoriteStyles(): FavoriteStyle[] {
   return styles;
 }
 
-function makeFavoriteStyle(tool: DrawingTool, color: string, size: number): FavoriteStyle {
+function makeFavoriteStyle(
+  tool: DrawingTool,
+  color: string,
+  size: number,
+): FavoriteStyle {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     tool,
@@ -161,8 +215,16 @@ export default function App() {
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
   const [activeSymbol, setActiveSymbol] = useState<string>("");
-  const [favoriteColors, setFavoriteColors] = useState<string[]>(loadFavoriteColors);
-  const [favoriteStyles, setFavoriteStyles] = useState<FavoriteStyle[]>(loadFavoriteStyles);
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
+  const [textStamp, setTextStamp] = useState<string>("note");
+  const [imageStampSrc, setImageStampSrc] = useState<string | null>(null);
+  const [favoriteColors, setFavoriteColors] = useState<string[]>(
+    loadFavoriteColors,
+  );
+  const [favoriteStyles, setFavoriteStyles] = useState<FavoriteStyle[]>(
+    loadFavoriteStyles,
+  );
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const effectiveInk = useMemo(() => {
     if (activeTool === "eraser") {
@@ -206,9 +268,27 @@ export default function App() {
     return merged.slice(0, FAVORITE_COLOR_LIMIT);
   }, [favoriteColors]);
 
+  const canSaveStyle = isDrawingTool(activeTool);
+  const isStrokeEnabled =
+    activeTool !== "lasso" &&
+    activeTool !== "elements" &&
+    activeTool !== "text" &&
+    activeTool !== "image";
+  const isPaletteEnabled =
+    activeTool !== "eraser" &&
+    activeTool !== "lasso" &&
+    activeTool !== "image";
+  const showShapeControls = activeTool === "shape";
+  const showElementControls = activeTool === "elements";
+  const showTextControls = activeTool === "text";
+  const showImageControls = activeTool === "image";
+
   useEffect(() => {
     try {
-      localStorage.setItem(FAVORITE_COLORS_STORAGE_KEY, JSON.stringify(favoriteColors));
+      localStorage.setItem(
+        FAVORITE_COLORS_STORAGE_KEY,
+        JSON.stringify(favoriteColors),
+      );
     } catch {
       // Ignore storage write failures.
     }
@@ -216,11 +296,30 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(FAVORITE_STYLES_STORAGE_KEY, JSON.stringify(favoriteStyles));
+      localStorage.setItem(
+        FAVORITE_STYLES_STORAGE_KEY,
+        JSON.stringify(favoriteStyles),
+      );
     } catch {
       // Ignore storage write failures.
     }
   }, [favoriteStyles]);
+
+  useEffect(() => {
+    // Keep the app fixed in-place on iPad while preserving pinch zoom.
+    const preventSingleFingerPan = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener("touchmove", preventSingleFingerPan, {
+      passive: false,
+    });
+    return () => {
+      document.removeEventListener("touchmove", preventSingleFingerPan);
+    };
+  }, []);
 
   const handleMonthTabChange = (nextMonth: number) => {
     setMonth(nextMonth);
@@ -229,6 +328,18 @@ export default function App() {
 
   const handleWeekTabChange = (nextWeekIndex: number) => {
     setWeekIndex(nextWeekIndex);
+  };
+
+  const setTool = (tool: InkTool) => {
+    setActiveTool(tool);
+    if (
+      tool === "eraser" ||
+      tool === "lasso" ||
+      tool === "shape" ||
+      tool === "image"
+    ) {
+      setActiveSymbol("");
+    }
   };
 
   const saveCurrentColor = () => {
@@ -246,7 +357,7 @@ export default function App() {
   };
 
   const saveCurrentStyle = () => {
-    if (activeTool === "eraser") {
+    if (!isDrawingTool(activeTool)) {
       return;
     }
 
@@ -265,10 +376,10 @@ export default function App() {
         return current;
       }
 
-      return [makeFavoriteStyle(activeTool, normalizedColor, normalizedSize), ...current].slice(
-        0,
-        FAVORITE_STYLE_LIMIT,
-      );
+      return [
+        makeFavoriteStyle(activeTool, normalizedColor, normalizedSize),
+        ...current,
+      ].slice(0, FAVORITE_STYLE_LIMIT);
     });
   };
 
@@ -279,21 +390,62 @@ export default function App() {
     setActiveSymbol("");
   };
 
+  const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : null;
+      if (!src) {
+        return;
+      }
+
+      setImageStampSrc(src);
+      setActiveTool("image");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const activeInkMode: "draw" | "erase" | "shape" | "lasso" | "image" = (() => {
+    if (activeTool === "eraser") {
+      return "erase";
+    }
+    if (activeTool === "shape") {
+      return "shape";
+    }
+    if (activeTool === "lasso") {
+      return "lasso";
+    }
+    if (activeTool === "image") {
+      return "image";
+    }
+    return "draw";
+  })();
+
+  const activeInkSymbol =
+    activeTool === "elements"
+      ? activeSymbol || null
+      : activeTool === "text"
+        ? textStamp.trim() || "note"
+        : null;
+
   return (
     <main className="app-shell">
       <header className="top-ink-toolbar" aria-label="Writing tools">
         <div className="top-toolbar-row">
           <div className="top-toolbar-group">
-            {(["pen", "pencil", "highlighter", "eraser"] as InkTool[]).map((tool) => (
+            {TOOL_SEQUENCE.map((tool) => (
               <button
                 key={tool}
                 type="button"
-                className={tool === activeTool ? "toolbar-button active" : "toolbar-button"}
+                className={
+                  tool === activeTool ? "toolbar-button active" : "toolbar-button"
+                }
                 onClick={() => {
-                  setActiveTool(tool);
-                  if (tool === "eraser") {
-                    setActiveSymbol("");
-                  }
+                  setTool(tool);
                 }}
                 title={TOOL_LABELS[tool]}
               >
@@ -308,6 +460,7 @@ export default function App() {
                 key={`size-${sizePreset}`}
                 type="button"
                 className={
+                  isStrokeEnabled &&
                   Math.abs(clampStrokeSize(strokeSize) - sizePreset) < 0.06
                     ? "toolbar-button active"
                     : "toolbar-button"
@@ -316,6 +469,7 @@ export default function App() {
                   setStrokeSize(sizePreset);
                 }}
                 title={`Stroke ${sizePreset.toFixed(1)}`}
+                disabled={!isStrokeEnabled}
               >
                 {sizePreset.toFixed(1)}
               </button>
@@ -331,7 +485,10 @@ export default function App() {
                 onClick={() => applyStyle(preset)}
                 title={`${TOOL_LABELS[preset.tool]} ${preset.size.toFixed(1)}`}
               >
-                <span className="style-chip-color" style={{ backgroundColor: preset.color }} />
+                <span
+                  className="style-chip-color"
+                  style={{ backgroundColor: preset.color }}
+                />
                 <span>{preset.size.toFixed(1)}</span>
               </button>
             ))}
@@ -339,7 +496,7 @@ export default function App() {
               type="button"
               className="toolbar-button"
               onClick={saveCurrentStyle}
-              disabled={activeTool === "eraser"}
+              disabled={!canSaveStyle}
               title="Save current writing style"
             >
               Save Style
@@ -354,22 +511,30 @@ export default function App() {
                 setAllowTouchInk(event.target.checked);
               }}
             />
-            Touch
+            Finger
           </label>
         </div>
 
         <div className="top-toolbar-row">
-          <div className="top-toolbar-group color-swatch-row" aria-label="Color swatches">
+          <div
+            className="top-toolbar-group color-swatch-row"
+            aria-label="Color swatches"
+          >
             {visibleColorSwatches.map((savedColor) => (
               <button
                 key={savedColor}
                 type="button"
-                className={savedColor === activeColor ? "swatch-button active" : "swatch-button"}
+                className={
+                  savedColor === activeColor
+                    ? "swatch-button active"
+                    : "swatch-button"
+                }
                 style={{ backgroundColor: savedColor }}
                 onClick={() => {
                   setActiveColor(savedColor);
                 }}
                 aria-label={`Use color ${savedColor}`}
+                disabled={!isPaletteEnabled}
               />
             ))}
           </div>
@@ -382,32 +547,96 @@ export default function App() {
               setActiveColor(event.target.value.toLowerCase());
             }}
             aria-label="Current color"
+            disabled={!isPaletteEnabled}
           />
 
-          <button type="button" className="toolbar-button" onClick={saveCurrentColor}>
+          <button
+            type="button"
+            className="toolbar-button"
+            onClick={saveCurrentColor}
+            disabled={!isPaletteEnabled}
+          >
             Save Color
           </button>
 
           <div className="top-toolbar-group symbols-chip-row">
-            {SYMBOL_OPTIONS.map((option) => {
-              const isActive = option.value === activeSymbol;
-              return (
-                <button
-                  key={option.label}
-                  type="button"
-                  className={isActive ? "toolbar-button active symbol-button" : "toolbar-button symbol-button"}
-                  onClick={() => {
-                    if (activeTool !== "eraser") {
-                      setActiveSymbol(option.value);
+            {showShapeControls
+              ? SHAPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={
+                      option.value === shapeKind
+                        ? "toolbar-button active"
+                        : "toolbar-button"
                     }
+                    onClick={() => {
+                      setShapeKind(option.value);
+                    }}
+                    title={option.label}
+                  >
+                    {option.label}
+                  </button>
+                ))
+              : null}
+
+            {showElementControls
+              ? SYMBOL_OPTIONS.map((option) => {
+                  const isActive = option.value === activeSymbol;
+                  return (
+                    <button
+                      key={option.label}
+                      type="button"
+                      className={
+                        isActive
+                          ? "toolbar-button active symbol-button"
+                          : "toolbar-button symbol-button"
+                      }
+                      onClick={() => {
+                        setActiveSymbol(option.value);
+                      }}
+                      title={option.label}
+                    >
+                      {option.value || option.label}
+                    </button>
+                  );
+                })
+              : null}
+
+            {showTextControls ? (
+              <input
+                type="text"
+                value={textStamp}
+                onChange={(event) => {
+                  setTextStamp(event.target.value);
+                }}
+                className="top-toolbar-text-input"
+                placeholder="Text stamp"
+                maxLength={48}
+                aria-label="Text stamp"
+              />
+            ) : null}
+
+            {showImageControls ? (
+              <>
+                <button
+                  type="button"
+                  className="toolbar-button"
+                  onClick={() => {
+                    imageInputRef.current?.click();
                   }}
-                  title={option.label}
-                  disabled={activeTool === "eraser"}
                 >
-                  {option.value || option.label}
+                  Pick Image
                 </button>
-              );
-            })}
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/png, image/jpeg, image/webp"
+                  className="toolbar-file-input"
+                  onChange={handleImageFileChange}
+                />
+              </>
+            ) : null}
           </div>
         </div>
       </header>
@@ -422,8 +651,10 @@ export default function App() {
             inkColor={activeColor}
             inkLineWidth={effectiveInk.lineWidth}
             inkOpacity={effectiveInk.opacity}
-            inkSymbol={activeTool === "eraser" ? null : activeSymbol || null}
-            inkMode={activeTool === "eraser" ? "erase" : "draw"}
+            inkSymbol={activeInkSymbol}
+            inkMode={activeInkMode}
+            inkShapeKind={shapeKind}
+            inkImageSrc={activeTool === "image" ? imageStampSrc : null}
             inkEraseRadius={eraseRadius}
             onMonthChange={handleMonthTabChange}
             onWeekIndexChange={handleWeekTabChange}

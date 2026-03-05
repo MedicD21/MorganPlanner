@@ -148,6 +148,22 @@
   margin: 0;
 }
 
+.top-toolbar-text-input {
+  width: clamp(8rem, 22vw, 14rem);
+  height: 1.7rem;
+  border: 1px solid #b6aa9e;
+  border-radius: 6px;
+  background: #fffdfa;
+  color: #2d2928;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.42rem;
+}
+
+.toolbar-file-input {
+  display: none;
+}
+
 .planner-stage {
   min-width: 0;
   min-height: 0;
@@ -216,10 +232,10 @@
   background: #f3eee8;
   color: #2d2928;
   font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 0.26rem 0.3rem;
+  padding: 0.2rem 0.28rem;
   cursor: pointer;
 }
 
@@ -234,6 +250,12 @@
 .style-preset-button:focus-visible {
   outline: 2px solid #6f625d;
   outline-offset: 1px;
+}
+
+.toolbar-button:disabled,
+.swatch-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .toolbar-action-row {

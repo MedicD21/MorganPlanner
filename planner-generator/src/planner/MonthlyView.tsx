@@ -22,7 +22,9 @@ interface MonthlyViewProps {
   inkLineWidth?: number;
   inkOpacity?: number;
   inkSymbol?: string | null;
-  inkMode?: "draw" | "erase";
+  inkMode?: "draw" | "erase" | "shape" | "lasso" | "image";
+  inkShapeKind?: "line" | "rectangle" | "ellipse";
+  inkImageSrc?: string | null;
   inkEraseRadius?: number;
   onInkInputType?: (inputType: InkInputType) => void;
   onMonthChange?: (month: number) => void;
@@ -251,6 +253,8 @@ export default function MonthlyView({
   inkOpacity = 1,
   inkSymbol = null,
   inkMode = "draw",
+  inkShapeKind = "line",
+  inkImageSrc = null,
   inkEraseRadius = 14,
   onInkInputType,
   onMonthChange,
@@ -451,6 +455,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               lockToCells
               onInputType={onInkInputType}
@@ -504,6 +510,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               lockToCells
               onInputType={onInkInputType}
@@ -545,6 +553,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
             />
@@ -577,6 +587,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
             />
@@ -610,6 +622,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
             />
@@ -638,6 +652,8 @@ export default function MonthlyView({
               opacity={inkOpacity}
               symbol={inkSymbol}
               mode={inkMode}
+              shapeKind={inkShapeKind}
+              imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
             />
