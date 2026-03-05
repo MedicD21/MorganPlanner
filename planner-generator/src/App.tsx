@@ -1,41 +1,45 @@
 import { useMemo, useState } from "react";
 import "./App.css";
 import MonthlyView from "./planner/MonthlyView";
-import { exportPlanner } from "./planner/exportPDF";
-import {
-  MONTH_NAMES,
-  formatWeekRange,
-  generateCalendar,
-} from "./planner/generateCalendar";
+import { MONTH_NAMES, formatWeekRange, generateCalendar } from "./planner/generateCalendar";
+import type { InkInputType } from "./planner/InkLayer";
 
 const DEFAULT_YEAR = 2026;
 const DEFAULT_MONTH = 3;
 const DEFAULT_WEEK_INDEX = 2;
 
+type InkInputState = InkInputType | "none";
+
+function formatInkInputLabel(value: InkInputState): string {
+  if (value === "none") {
+    return "waiting";
+  }
+
+  if (value === "pen") {
+    return "Apple Pencil / stylus";
+  }
+
+  if (value === "touch") {
+    return "touch";
+  }
+
+  if (value === "mouse") {
+    return "mouse";
+  }
+
+  return value;
+}
+
 export default function App() {
   const [year, setYear] = useState<number>(DEFAULT_YEAR);
   const [month, setMonth] = useState<number>(DEFAULT_MONTH);
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX);
+  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(false);
+  const [lastInkInput, setLastInkInput] = useState<InkInputState>("none");
 
-  const calendarData = useMemo(
-    () => generateCalendar(year, month),
-    [year, month],
-  );
-  const safeWeekIndex = Math.max(
-    0,
-    Math.min(weekIndex, calendarData.weeks.length - 1),
-  );
-  const yearExportMonths = useMemo(
-    () =>
-      MONTH_NAMES.map((_, monthIndex) => {
-        const monthValue = monthIndex + 1;
-        return {
-          month: monthValue,
-          weekCount: generateCalendar(year, monthValue).weeks.length,
-        };
-      }),
-    [year],
-  );
+  const calendarData = useMemo(() => generateCalendar(year, month), [year, month]);
+  const safeWeekIndex = Math.max(0, Math.min(weekIndex, calendarData.weeks.length - 1));
+
   const handleMonthTabChange = (nextMonth: number) => {
     setMonth(nextMonth);
     setWeekIndex(0);
@@ -48,10 +52,9 @@ export default function App() {
   return (
     <main className="app-shell">
       <section className="controls-panel">
-        <h1>GoodNotes Planner Builder</h1>
+        <h1>Digital Planner Web App</h1>
         <p>
-          Monthly + weekly spread and notes spread styled to match your
-          reference.
+          Apple Pencil-first planner. Swipe left or right on the weekly column to move through that month&apos;s weeks.
         </p>
 
         <div className="controls-row">
@@ -77,6 +80,7 @@ export default function App() {
               value={month}
               onChange={(event) => {
                 setMonth(Number.parseInt(event.target.value, 10));
+                setWeekIndex(0);
               }}
             >
               {MONTH_NAMES.map((monthName, index) => (
@@ -96,10 +100,7 @@ export default function App() {
               }}
             >
               {calendarData.weeks.map((week, index) => (
-                <option
-                  key={`${week[0]?.date.toISOString()}-${index}`}
-                  value={index}
-                >
+                <option key={`${week[0]?.date.toISOString()}-${index}`} value={index}>
                   {formatWeekRange(week)}
                 </option>
               ))}
@@ -108,29 +109,18 @@ export default function App() {
         </div>
 
         <div className="controls-actions">
-          <button
-            type="button"
-            onClick={() =>
-              exportPlanner({
-                pageSet: "preview",
-                title: `GoodNotes Planner ${month}/${year}`,
-              })
-            }
-          >
-            Export Current Spread
-          </button>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() =>
-              exportPlanner({
-                pageSet: "year",
-                title: `GoodNotes Planner ${year}`,
-              })
-            }
-          >
-            Export Full Year
-          </button>
+          <label className="toggle-control" htmlFor="allow-touch-ink">
+            <input
+              id="allow-touch-ink"
+              type="checkbox"
+              checked={allowTouchInk}
+              onChange={(event) => {
+                setAllowTouchInk(event.target.checked);
+              }}
+            />
+            Allow finger drawing
+          </label>
+          <span className="ink-status">Ink input: {formatInkInputLabel(lastInkInput)}</span>
         </div>
       </section>
 
@@ -138,34 +128,11 @@ export default function App() {
         year={year}
         month={month}
         weekIndex={safeWeekIndex}
+        allowTouchInk={allowTouchInk}
+        onInkInputType={setLastInkInput}
         onMonthChange={handleMonthTabChange}
         onWeekIndexChange={handleWeekTabChange}
       />
-
-      <div className="year-export-source" aria-hidden="true">
-        {yearExportMonths.map(({ month: exportMonth, weekCount }) => (
-          <div key={`export-month-${exportMonth}`}>
-            {Array.from({ length: weekCount }).map((_, exportWeekIndex) => (
-              <MonthlyView
-                key={`export-month-${exportMonth}-week-${exportWeekIndex}`}
-                year={year}
-                month={exportMonth}
-                weekIndex={exportWeekIndex}
-                pageSet="year"
-                showNotes={false}
-              />
-            ))}
-            <MonthlyView
-              key={`export-month-${exportMonth}-notes`}
-              year={year}
-              month={exportMonth}
-              weekIndex={0}
-              pageSet="year"
-              showMonthWeek={false}
-            />
-          </div>
-        ))}
-      </div>
     </main>
   );
 }

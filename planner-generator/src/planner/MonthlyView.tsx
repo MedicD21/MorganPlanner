@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   MONTH_NAMES,
   WEEKDAY_INITIALS,
@@ -7,6 +8,7 @@ import {
   shiftMonth,
   type CalendarCell,
 } from "./generateCalendar";
+import InkLayer, { type InkInputType } from "./InkLayer";
 
 interface MonthlyViewProps {
   year: number;
@@ -15,6 +17,8 @@ interface MonthlyViewProps {
   pageSet?: string;
   showMonthWeek?: boolean;
   showNotes?: boolean;
+  allowTouchInk?: boolean;
+  onInkInputType?: (inputType: InkInputType) => void;
   onMonthChange?: (month: number) => void;
   onWeekIndexChange?: (weekIndex: number) => void;
 }
@@ -214,6 +218,8 @@ export default function MonthlyView({
   pageSet = "preview",
   showMonthWeek = true,
   showNotes = true,
+  allowTouchInk = false,
+  onInkInputType,
   onMonthChange,
   onWeekIndexChange,
 }: MonthlyViewProps) {
@@ -227,6 +233,11 @@ export default function MonthlyView({
 
   const nextMonth = shiftMonth(year, month, 1);
   const monthAfterNext = shiftMonth(year, month, 2);
+  const weekSwipeStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
 
   const weekTitle = formatWeekRange(selectedWeek);
 
@@ -237,6 +248,48 @@ export default function MonthlyView({
   const monthWeekId = getMonthWeekId(pageSet, month, safeWeekIndex);
   const planningId = getPlanningId(pageSet, month);
   const notesPageId = getNotesPageId(pageSet, month);
+
+  const handleWeekSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    if (event.target instanceof HTMLElement && event.target.closest("a, button")) {
+      return;
+    }
+
+    weekSwipeStartRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+
+  const handleWeekSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
+    const swipeStart = weekSwipeStartRef.current;
+    if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
+      return;
+    }
+
+    weekSwipeStartRef.current = null;
+
+    const deltaX = event.clientX - swipeStart.startX;
+    const deltaY = event.clientY - swipeStart.startY;
+    const isHorizontalSwipe = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+    if (!isHorizontalSwipe || !onWeekIndexChange) {
+      return;
+    }
+
+    const nextIndex = deltaX < 0 ? safeWeekIndex + 1 : safeWeekIndex - 1;
+    const clampedIndex = Math.max(0, Math.min(calendarData.weeks.length - 1, nextIndex));
+    if (clampedIndex !== safeWeekIndex) {
+      onWeekIndexChange(clampedIndex);
+    }
+  };
+
+  const clearWeekSwipe = () => {
+    weekSwipeStartRef.current = null;
+  };
 
   return (
     <div className="planner-previews">
@@ -285,63 +338,30 @@ export default function MonthlyView({
 
               <div className="calendar-grid">
                 {calendarData.weeks.map((week, rowIndex) =>
-                  week.map((cell, colIndex) => {
-                    const isActiveWeek = rowIndex === safeWeekIndex;
-                    const isInteractiveCell =
-                      typeof onWeekIndexChange === "function";
-
-                    const classNames = [
-                      cell.inMonth
-                        ? "calendar-cell"
-                        : "calendar-cell outside-month",
-                    ];
-                    if (isActiveWeek) {
-                      classNames.push("active-week");
-                    }
-                    if (isInteractiveCell) {
-                      classNames.push("week-link");
-                    }
-
-                    return (
-                      <div
-                        key={`${rowIndex}-${colIndex}-${cell.year}-${cell.month}-${cell.dayNumber}`}
-                        className={classNames.join(" ")}
-                        onClick={
-                          isInteractiveCell
-                            ? () => onWeekIndexChange(rowIndex)
-                            : undefined
-                        }
-                        onKeyDown={
-                          isInteractiveCell
-                            ? (event) => {
-                                if (
-                                  event.key === "Enter" ||
-                                  event.key === " "
-                                ) {
-                                  event.preventDefault();
-                                  onWeekIndexChange(rowIndex);
-                                }
-                              }
-                            : undefined
-                        }
-                        role={isInteractiveCell ? "button" : undefined}
-                        tabIndex={isInteractiveCell ? 0 : undefined}
-                        title={
-                          isInteractiveCell
-                            ? `Set week to ${formatWeekRange(week)}`
-                            : undefined
-                        }
-                      >
+                  week.map((cell, colIndex) => (
+                    <div
+                      key={`${rowIndex}-${colIndex}-${cell.year}-${cell.month}-${cell.dayNumber}`}
+                      className={cell.inMonth ? "calendar-cell" : "calendar-cell outside-month"}
+                    >
                         <span>{cell.dayNumber}</span>
-                      </div>
-                    );
-                  }),
+                    </div>
+                  )),
                 )}
               </div>
             </div>
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
+            />
           </article>
 
-          <article className="planner-paper week-paper">
+          <article
+            className="planner-paper week-paper"
+            onPointerDown={handleWeekSwipeStart}
+            onPointerUp={handleWeekSwipeEnd}
+            onPointerCancel={clearWeekSwipe}
+          >
             <MonthTabs
               activeMonth={month}
               side="right"
@@ -361,9 +381,14 @@ export default function MonthlyView({
               href={`#${planningId}`}
               title="Go to planning page"
             >
-              my to do
+              to do page
             </a>
             <div className="week-lines">{renderWeeklyRows(selectedWeek)}</div>
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}-week-${safeWeekIndex}`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
+            />
           </article>
         </section>
       ) : null}
@@ -392,6 +417,11 @@ export default function MonthlyView({
               </div>
               <div className="notes-week-col" />
             </div>
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}-planning-left`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
+            />
           </article>
 
           <article className="planner-paper notes-main-paper">
@@ -407,6 +437,11 @@ export default function MonthlyView({
                 />
               </div>
             </div>
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}-planning-right`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
+            />
           </article>
         </section>
       ) : null}
@@ -428,6 +463,11 @@ export default function MonthlyView({
                 ),
               )}
             </div>
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}-notes-left`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
+            />
           </article>
 
           <article className="planner-paper notes-dotted-paper">
@@ -438,6 +478,11 @@ export default function MonthlyView({
               side="right"
               pageSet={pageSet}
               onMonthChange={onMonthChange}
+            />
+            <InkLayer
+              pageId={`${pageSet}-ink-${year}-month-${month}-notes-right`}
+              allowTouch={allowTouchInk}
+              onInputType={onInkInputType}
             />
           </article>
         </section>
