@@ -555,18 +555,10 @@
   padding: 0;
 }
 
-.sticky-note-body {
+.sticky-note-pad {
   width: 100%;
   height: 100%;
-  border: 0;
-  resize: none;
-  outline: none;
   background: transparent;
-  color: var(--sticky-text, #2f2b2a);
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  padding: 0.32rem 0.38rem 0.4rem;
 }
 
 .sticky-note-collapsed {
@@ -586,7 +578,7 @@
 }
 
 .sticky-note-action:focus-visible,
-.sticky-note-body:focus-visible,
+.sticky-note-pad:focus-visible,
 .sticky-note-collapsed:focus-visible {
   outline: 2px solid #6f625d;
   outline-offset: 1px;

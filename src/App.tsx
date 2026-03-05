@@ -31,6 +31,13 @@ const DEFAULT_COLOR_PALETTE = [
 const SIZE_PRESETS = [1.1, 2.1, 3.1, 4.2];
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.8;
+const PENCIL_DOUBLE_TAP_MS = 340;
+const THREE_FINGER_TAP_MAX_MS = 340;
+const THREE_FINGER_DOUBLE_TAP_MS = 520;
+const THREE_FINGER_MAX_MOVE = 26;
+const PLANNER_UNDO_EVENT = "planner-undo";
+const PLANNER_REDO_EVENT = "planner-redo";
+const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
 
 type ShapeKind = "line" | "rectangle" | "ellipse";
 type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
@@ -70,6 +77,26 @@ interface PinchGestureState {
   startRectTop: number;
   contentX: number;
   contentY: number;
+}
+
+interface TouchGestureMeta {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  startTime: number;
+}
+
+interface ThreeFingerTapCandidate {
+  pointerIds: number[];
+  startTime: number;
+  centerX: number;
+  centerY: number;
+  maxMove: number;
+}
+
+interface PlannerHistoryEventDetail {
+  targetPageId: string | null;
 }
 
 const TOOL_LABELS: Record<InkTool, string> = {
@@ -385,7 +412,6 @@ export default function App() {
   const [activeSymbol, setActiveSymbol] = useState<string>("");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [textStamp, setTextStamp] = useState<string>("note");
-  const [stickyTemplate, setStickyTemplate] = useState<string>("new note");
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [zoomOffset, setZoomOffset] = useState<{ x: number; y: number }>({
     x: 0,
@@ -403,7 +429,15 @@ export default function App() {
   const zoomSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastNonEraserToolRef = useRef<InkTool>("pen");
   const activeTouchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
+  const touchGestureMetaRef = useRef<Map<number, TouchGestureMeta>>(new Map());
   const pinchGestureRef = useRef<PinchGestureState | null>(null);
+  const activeThreeFingerTapRef = useRef<ThreeFingerTapCandidate | null>(null);
+  const lastThreeFingerTapRef = useRef<{
+    centerX: number;
+    centerY: number;
+    time: number;
+  } | null>(null);
+  const lastPencilToolbarTapRef = useRef<number>(0);
   const zoomScaleRef = useRef<number>(1);
   const zoomOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -465,7 +499,6 @@ export default function App() {
   const showElementControls = activeTool === "elements";
   const showTextControls = activeTool === "text";
   const showImageControls = activeTool === "image";
-  const showStickyControls = activeTool === "sticky";
 
   useEffect(() => {
     try {
@@ -556,6 +589,30 @@ export default function App() {
     setActiveSymbol("");
   };
 
+  const getActiveInkPageId = () => {
+    const plannerWindow = window as Window & { __plannerActiveInkPageId?: string };
+    const candidate = plannerWindow[ACTIVE_INK_PAGE_KEY];
+    return typeof candidate === "string" ? candidate : null;
+  };
+
+  const dispatchHistoryEvent = (eventName: string) => {
+    window.dispatchEvent(
+      new CustomEvent<PlannerHistoryEventDetail>(eventName, {
+        detail: {
+          targetPageId: getActiveInkPageId(),
+        },
+      }),
+    );
+  };
+
+  const triggerUndo = () => {
+    dispatchHistoryEvent(PLANNER_UNDO_EVENT);
+  };
+
+  const triggerRedo = () => {
+    dispatchHistoryEvent(PLANNER_REDO_EVENT);
+  };
+
   const clampZoomOffset = (
     candidate: { x: number; y: number },
     scale: number,
@@ -633,9 +690,50 @@ export default function App() {
       x: event.clientX,
       y: event.clientY,
     });
+    touchGestureMetaRef.current.set(event.pointerId, {
+      startX: event.clientX,
+      startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
+      startTime: Date.now(),
+    });
 
-    if (activeTouchPointsRef.current.size >= 2) {
+    if (activeTouchPointsRef.current.size === 3) {
+      const points = Array.from(activeTouchPointsRef.current.entries());
+      const pointerIds = points.map(([pointerId]) => pointerId);
+      const gestureTimes = pointerIds
+        .map((pointerId) => touchGestureMetaRef.current.get(pointerId)?.startTime ?? Date.now());
+      const earliest = Math.min(...gestureTimes);
+      const latest = Math.max(...gestureTimes);
+
+      if (latest - earliest <= 120) {
+        const centerX =
+          points.reduce((sum, [, point]) => sum + point.x, 0) / points.length;
+        const centerY =
+          points.reduce((sum, [, point]) => sum + point.y, 0) / points.length;
+        activeThreeFingerTapRef.current = {
+          pointerIds,
+          startTime: earliest,
+          centerX,
+          centerY,
+          maxMove: 0,
+        };
+      } else {
+        activeThreeFingerTapRef.current = null;
+      }
+    } else if (activeTouchPointsRef.current.size > 3) {
+      activeThreeFingerTapRef.current = null;
+    }
+
+    if (activeTouchPointsRef.current.size === 2) {
       beginPinchGesture();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (activeTouchPointsRef.current.size >= 3) {
+      pinchGestureRef.current = null;
       event.preventDefault();
       event.stopPropagation();
     }
@@ -656,8 +754,38 @@ export default function App() {
       x: event.clientX,
       y: event.clientY,
     });
+    const gestureMeta = touchGestureMetaRef.current.get(event.pointerId);
+    if (gestureMeta) {
+      gestureMeta.currentX = event.clientX;
+      gestureMeta.currentY = event.clientY;
+    }
+
+    const threeFingerTap = activeThreeFingerTapRef.current;
+    if (threeFingerTap) {
+      let maxMove = threeFingerTap.maxMove;
+      for (const pointerId of threeFingerTap.pointerIds) {
+        const pointerMeta = touchGestureMetaRef.current.get(pointerId);
+        if (!pointerMeta) {
+          continue;
+        }
+
+        const movement = Math.hypot(
+          pointerMeta.currentX - pointerMeta.startX,
+          pointerMeta.currentY - pointerMeta.startY,
+        );
+        maxMove = Math.max(maxMove, movement);
+      }
+      threeFingerTap.maxMove = maxMove;
+    }
 
     if (activeTouchPointsRef.current.size < 2) {
+      return;
+    }
+
+    if (activeTouchPointsRef.current.size > 2) {
+      pinchGestureRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 
@@ -709,16 +837,98 @@ export default function App() {
       return;
     }
 
+    const touchMeta = touchGestureMetaRef.current.get(event.pointerId);
+    if (touchMeta) {
+      touchMeta.currentX = event.clientX;
+      touchMeta.currentY = event.clientY;
+    }
+
     const hadPinch = pinchGestureRef.current !== null;
+    const threeFingerTap = activeThreeFingerTapRef.current;
+    const releasedFromThreeFingerTap =
+      threeFingerTap?.pointerIds.includes(event.pointerId) ?? false;
+
     activeTouchPointsRef.current.delete(event.pointerId);
+    touchGestureMetaRef.current.delete(event.pointerId);
+    if (activeTouchPointsRef.current.size === 0) {
+      touchGestureMetaRef.current.clear();
+    }
     if (activeTouchPointsRef.current.size < 2) {
       pinchGestureRef.current = null;
     }
 
-    if (hadPinch) {
+    if (
+      threeFingerTap &&
+      releasedFromThreeFingerTap &&
+      activeTouchPointsRef.current.size === 0
+    ) {
+      const now = Date.now();
+      const duration = now - threeFingerTap.startTime;
+      const isTapGesture =
+        duration <= THREE_FINGER_TAP_MAX_MS &&
+        threeFingerTap.maxMove <= THREE_FINGER_MAX_MOVE;
+
+      if (isTapGesture) {
+        const previousTap = lastThreeFingerTapRef.current;
+        if (previousTap) {
+          const tapGap = now - previousTap.time;
+          const tapDistance = Math.hypot(
+            threeFingerTap.centerX - previousTap.centerX,
+            threeFingerTap.centerY - previousTap.centerY,
+          );
+          if (tapGap <= THREE_FINGER_DOUBLE_TAP_MS && tapDistance <= 72) {
+            lastThreeFingerTapRef.current = null;
+            triggerUndo();
+          } else {
+            lastThreeFingerTapRef.current = {
+              centerX: threeFingerTap.centerX,
+              centerY: threeFingerTap.centerY,
+              time: now,
+            };
+          }
+        } else {
+          lastThreeFingerTapRef.current = {
+            centerX: threeFingerTap.centerX,
+            centerY: threeFingerTap.centerY,
+            time: now,
+          };
+        }
+      }
+
+      activeThreeFingerTapRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (activeTouchPointsRef.current.size === 0) {
+      activeThreeFingerTapRef.current = null;
+    }
+
+    if (hadPinch || releasedFromThreeFingerTap) {
       event.preventDefault();
       event.stopPropagation();
     }
+  };
+
+  const handleToolButtonClick = (tool: InkTool, tapTime: number) => {
+    if (tool !== "pencil") {
+      lastPencilToolbarTapRef.current = 0;
+      setTool(tool);
+      return;
+    }
+
+    if (
+      activeTool === "pencil" &&
+      tapTime - lastPencilToolbarTapRef.current <= PENCIL_DOUBLE_TAP_MS
+    ) {
+      lastPencilToolbarTapRef.current = 0;
+      toggleEraserFromPencilDoubleTap();
+      return;
+    }
+
+    lastPencilToolbarTapRef.current = tapTime;
+    setTool("pencil");
   };
 
   const saveCurrentColor = () => {
@@ -886,8 +1096,8 @@ export default function App() {
                     ? "toolbar-button toolbar-icon-button active"
                     : "toolbar-button toolbar-icon-button"
                 }
-                onClick={() => {
-                  setTool(tool);
+                onClick={(event) => {
+                  handleToolButtonClick(tool, event.timeStamp);
                 }}
                 title={TOOL_LABELS[tool]}
                 aria-label={TOOL_LABELS[tool]}
@@ -896,6 +1106,30 @@ export default function App() {
                 <span className="sr-only">{TOOL_LABELS[tool]}</span>
               </button>
             ))}
+            <button
+              type="button"
+              className="toolbar-button toolbar-icon-button"
+              onClick={triggerUndo}
+              title="Undo (three-finger double tap)"
+              aria-label="Undo"
+            >
+              <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+                <path d="M9 7L4 12l5 5" />
+                <path d="M5 12h9a6 6 0 010 12h-1" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="toolbar-button toolbar-icon-button"
+              onClick={triggerRedo}
+              title="Redo"
+              aria-label="Redo"
+            >
+              <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+                <path d="M15 7l5 5-5 5" />
+                <path d="M19 12h-9a6 6 0 000 12h1" />
+              </svg>
+            </button>
           </div>
 
           <div className="top-toolbar-group">
@@ -1082,19 +1316,6 @@ export default function App() {
               </>
             ) : null}
 
-            {showStickyControls ? (
-              <input
-                type="text"
-                value={stickyTemplate}
-                onChange={(event) => {
-                  setStickyTemplate(event.target.value);
-                }}
-                className="top-toolbar-text-input"
-                placeholder="Post-it text"
-                maxLength={140}
-                aria-label="Default post-it text"
-              />
-            ) : null}
           </div>
         </div>
       </header>
@@ -1128,8 +1349,6 @@ export default function App() {
               inkShapeKind={shapeKind}
               inkImageSrc={activeTool === "image" ? imageStampSrc : null}
               inkEraseRadius={eraseRadius}
-              inkStickyTemplate={stickyTemplate}
-              onPenDoubleTap={toggleEraserFromPencilDoubleTap}
               onMonthChange={handleMonthTabChange}
               onWeekIndexChange={handleWeekTabChange}
             />
