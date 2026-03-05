@@ -14,9 +14,12 @@ body,
 }
 
 body {
+  position: fixed;
+  inset: 0;
   min-width: 320px;
   font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
   overscroll-behavior: none;
+  touch-action: pinch-zoom;
   background:
     radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.1), transparent 30%),
     radial-gradient(circle at 85% 12%, rgba(255, 255, 255, 0.09), transparent 38%),

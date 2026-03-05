@@ -16,10 +16,13 @@
   --shell-pad-y: clamp(0.5rem, 2vw, 1.25rem);
   --layout-gap: clamp(0.5rem, 1vw, 1rem);
   --tool-panel-width: clamp(180px, 19vw, 250px);
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
   padding: var(--shell-pad-y) var(--shell-pad-x);
   overflow: hidden;
+  touch-action: pinch-zoom;
   color: var(--ink);
 }
 
@@ -39,6 +42,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
+  touch-action: pinch-zoom;
 }
 
 .ink-toolbar {
@@ -53,6 +57,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   backdrop-filter: blur(2px);
+  touch-action: pan-y pinch-zoom;
 }
 
 .ink-toolbar h2 {
@@ -271,6 +276,7 @@
   max-height: 100%;
   margin: 0;
   overflow: hidden;
+  touch-action: pinch-zoom;
 }
 
 .planner-spread {
@@ -284,6 +290,7 @@
   border: 1px solid #25181c;
   box-shadow: var(--shadow);
   padding: 0.45rem;
+  touch-action: pinch-zoom;
 }
 
 .planner-previews > .planner-spread {
@@ -306,6 +313,7 @@
   background: var(--paper);
   position: relative;
   overflow: hidden;
+  touch-action: pinch-zoom;
 }
 
 .ink-layer-canvas {

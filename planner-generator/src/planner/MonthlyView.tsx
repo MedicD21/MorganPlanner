@@ -52,6 +52,14 @@ interface WeekTabsProps {
 const NOTES_RULED_LINE_COUNT = 24;
 type SpreadView = "month-week" | "planning" | "notes";
 
+function updateHash(hashValue: string): void {
+  if (window.location.hash === hashValue) {
+    return;
+  }
+
+  window.history.pushState(null, "", hashValue);
+}
+
 function getMonthWeekId(
   pageSet: string,
   month: number,
@@ -135,9 +143,11 @@ function MonthTabs({
             href={`#${getMonthWeekId(pageSet, monthValue, 0)}`}
             onClick={
               onMonthChange
-                ? () => {
+                ? (event) => {
+                    event.preventDefault();
                     onOpenMonthWeek?.();
                     onMonthChange(monthValue);
+                    updateHash(`#${getMonthWeekId(pageSet, monthValue, 0)}`);
                   }
                 : undefined
             }
@@ -153,8 +163,10 @@ function MonthTabs({
         <a
           className="month-tab month-tab-notes"
           href={`#${getNotesPageId(pageSet, activeMonth)}`}
-          onClick={() => {
+          onClick={(event) => {
+            event.preventDefault();
             onOpenNotes?.();
+            updateHash(`#${getNotesPageId(pageSet, activeMonth)}`);
           }}
           title="Go to notes"
         >
@@ -308,9 +320,11 @@ export default function MonthlyView({
 
     parseHash();
     window.addEventListener("hashchange", parseHash);
+    window.addEventListener("popstate", parseHash);
 
     return () => {
       window.removeEventListener("hashchange", parseHash);
+      window.removeEventListener("popstate", parseHash);
     };
   }, [
     calendarData.weeks.length,
@@ -466,8 +480,10 @@ export default function MonthlyView({
             <a
               className="spread-link to-planning-link"
               href={`#${planningId}`}
-              onClick={() => {
+              onClick={(event) => {
+                event.preventDefault();
                 setActiveView("planning");
+                updateHash(`#${planningId}`);
               }}
               title="Go to planning page"
             >
