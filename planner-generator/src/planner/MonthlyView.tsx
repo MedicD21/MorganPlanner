@@ -18,6 +18,10 @@ interface MonthlyViewProps {
   showMonthWeek?: boolean;
   showNotes?: boolean;
   allowTouchInk?: boolean;
+  inkColor?: string;
+  inkLineWidth?: number;
+  inkOpacity?: number;
+  inkSymbol?: string | null;
   onInkInputType?: (inputType: InkInputType) => void;
   onMonthChange?: (month: number) => void;
   onWeekIndexChange?: (weekIndex: number) => void;
@@ -126,8 +130,7 @@ function MonthTabs({
             href={`#${getMonthWeekId(pageSet, monthValue, 0)}`}
             onClick={
               onMonthChange
-                ? (event) => {
-                    event.preventDefault();
+                ? () => {
                     onMonthChange(monthValue);
                   }
                 : undefined
@@ -205,6 +208,7 @@ function renderWeeklyRows(week: CalendarCell[]) {
     <div
       key={`${cell.year}-${cell.month}-${cell.dayNumber}-${index}`}
       className="weekly-row"
+      data-ink-cell
     >
       <div className="weekly-row-label">{`${cell.dayNumber} ${WEEKDAY_SHORT[index]}`}</div>
     </div>
@@ -219,6 +223,10 @@ export default function MonthlyView({
   showMonthWeek = true,
   showNotes = true,
   allowTouchInk = false,
+  inkColor = "#2f2b2a",
+  inkLineWidth = 1.7,
+  inkOpacity = 1,
+  inkSymbol = null,
   onInkInputType,
   onMonthChange,
   onWeekIndexChange,
@@ -336,6 +344,7 @@ export default function MonthlyView({
                     <div
                       key={`${rowIndex}-${colIndex}-${cell.year}-${cell.month}-${cell.dayNumber}`}
                       className={cell.inMonth ? "calendar-cell" : "calendar-cell outside-month"}
+                      data-ink-cell
                     >
                         <span>{cell.dayNumber}</span>
                     </div>
@@ -346,6 +355,11 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
+              lockToCells
               onInputType={onInkInputType}
             />
           </article>
@@ -381,6 +395,11 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-week-${safeWeekIndex}`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
+              lockToCells
               onInputType={onInkInputType}
             />
           </article>
@@ -408,6 +427,10 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-planning-left`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
               onInputType={onInkInputType}
             />
           </article>
@@ -428,6 +451,10 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-planning-right`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
               onInputType={onInkInputType}
             />
           </article>
@@ -448,6 +475,10 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-notes-left`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
               onInputType={onInkInputType}
             />
           </article>
@@ -464,6 +495,10 @@ export default function MonthlyView({
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-notes-right`}
               allowTouch={allowTouchInk}
+              color={inkColor}
+              lineWidth={inkLineWidth}
+              opacity={inkOpacity}
+              symbol={inkSymbol}
               onInputType={onInkInputType}
             />
           </article>

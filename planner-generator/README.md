@@ -94,19 +94,14 @@ Confirmed in this project: exported planner links work in GoodNotes.
 
 ## Deploy to GitHub Pages
 
-This project is configured for `gh-pages` deployment.
+This project deploys from **one branch** (`main`) using GitHub Actions.
 
-```bash
-npm run deploy
-```
-
-That command builds and publishes `dist` to the `gh-pages` branch.
-
-Then in GitHub:
+### One-time setup in GitHub
 
 1. Repo `Settings` -> `Pages`
-2. Source: `Deploy from a branch`
-3. Branch: `gh-pages` + folder `/ (root)`
+2. Source: `GitHub Actions`
+
+After that, every push to `main` triggers `.github/workflows/deploy-pages.yml` and publishes `dist`.
 
 Site URL pattern:
 
@@ -120,12 +115,12 @@ https://<github-username>.github.io/<repo-name>/
 - `npm run build` - type-check + production build
 - `npm run preview` - preview production build locally
 - `npm run lint` - run ESLint
-- `npm run deploy` - publish `dist` to `gh-pages`
+- GitHub Actions deploys on every push to `main`
 
 ## Key Files
 
-- `src/App.tsx` - app controls and year export composition
+- `src/App.tsx` - app shell + writing toolbar state
 - `src/planner/MonthlyView.tsx` - planner page layouts and navigation links
 - `src/planner/generateCalendar.ts` - calendar/week generation logic
-- `src/planner/exportPDF.ts` - browser print export flow
-- `src/App.css` - planner layout + print styles
+- `src/planner/InkLayer.tsx` - canvas ink + symbols + local persistence
+- `src/App.css` - planner layout + toolbar UI
