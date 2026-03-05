@@ -215,7 +215,7 @@ export default function MonthlyView({
   year,
   month,
   weekIndex,
-  pageSet = "preview",
+  pageSet = "planner",
   showMonthWeek = true,
   showNotes = true,
   allowTouchInk = false,
@@ -294,13 +294,7 @@ export default function MonthlyView({
   return (
     <div className="planner-previews">
       {showMonthWeek ? (
-        <section
-          id={monthWeekId}
-          className="planner-spread planner-print-page"
-          data-planner-page
-          data-planner-set={pageSet}
-          data-planner-kind="month-week"
-        >
+        <section id={monthWeekId} className="planner-spread">
           <article className="planner-paper month-paper">
             <header className="month-header">
               <div className="month-number">{month}</div>
@@ -394,13 +388,7 @@ export default function MonthlyView({
       ) : null}
 
       {showNotes ? (
-        <section
-          id={planningId}
-          className="planner-spread notes-spread planner-print-page"
-          data-planner-page
-          data-planner-set={pageSet}
-          data-planner-kind="planning"
-        >
+        <section id={planningId} className="planner-spread notes-spread">
           <article className="planner-paper notes-left-paper">
             <div className="notes-left-top">
               <span>to do today</span>
@@ -447,13 +435,7 @@ export default function MonthlyView({
       ) : null}
 
       {showNotes ? (
-        <section
-          id={notesPageId}
-          className="planner-spread notes-page-spread planner-print-page"
-          data-planner-page
-          data-planner-set={pageSet}
-          data-planner-kind="notes"
-        >
+        <section id={notesPageId} className="planner-spread notes-page-spread">
           <article className="planner-paper notes-ruled-paper">
             <header className="notes-page-header">notes</header>
             <div className="ruled-notes-body">
