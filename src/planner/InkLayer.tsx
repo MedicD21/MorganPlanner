@@ -5,6 +5,7 @@ export type InkShapeKind = "line" | "rectangle" | "ellipse";
 export type InkLayerMode =
   | "draw"
   | "erase"
+  | "bucket"
   | "shape"
   | "lasso"
   | "image"
@@ -31,6 +32,7 @@ interface InkPoint {
   x: number;
   y: number;
   pressure: number;
+  timestamp?: number;
 }
 
 interface InkClipRect {
@@ -68,6 +70,13 @@ interface InkImage {
   clipRect?: InkClipRect | null;
 }
 
+interface InkFill {
+  id: string;
+  rect: InkClipRect;
+  color: string;
+  opacity: number;
+}
+
 interface InkSticky {
   id: string;
   x: number;
@@ -82,12 +91,14 @@ interface InkDocument {
   strokes: InkStroke[];
   symbols: InkSymbol[];
   images: InkImage[];
+  fills: InkFill[];
   stickies: InkSticky[];
 }
 
 interface ActiveStroke {
   pointerId: number;
   stroke: InkStroke;
+  lastMoveTime: number;
 }
 
 interface PenTapCandidate {
@@ -106,8 +117,7 @@ interface ActiveShape {
 
 interface ActiveLasso {
   pointerId: number;
-  start: InkPoint;
-  current: InkPoint;
+  points: InkPoint[];
 }
 
 interface ActiveStickyDrag {
@@ -121,6 +131,7 @@ interface LassoSelection {
   strokeIndexes: number[];
   symbolIndexes: number[];
   imageIndexes: number[];
+  fillIndexes: number[];
   bounds: InkClipRect;
 }
 
@@ -140,6 +151,8 @@ const CELL_SELECTOR = "[data-ink-cell]";
 const DEFAULT_STICKY_WIDTH = 180;
 const DEFAULT_STICKY_HEIGHT = 134;
 const COLLAPSED_STICKY_SIZE = 30;
+const BUCKET_FILL_OPACITY = 0.28;
+const AUTO_SHAPE_HOLD_MS = 260;
 
 function normalizeInputType(pointerType: string): InkInputType {
   if (pointerType === "pen" || pointerType === "touch" || pointerType === "mouse") {
@@ -171,6 +184,7 @@ function getRelativePoint(event: PointerLikeEvent, rect: DOMRect): InkPoint {
     x: event.clientX - rect.left,
     y: event.clientY - rect.top,
     pressure: clampPressure(event.pressure),
+    timestamp: Date.now(),
   };
 }
 
@@ -220,12 +234,13 @@ function parseStoredInk(raw: string): InkDocument {
       strokes: parsed as InkStroke[],
       symbols: [],
       images: [],
+      fills: [],
       stickies: [],
     };
   }
 
   if (!parsed || typeof parsed !== "object") {
-    return { strokes: [], symbols: [], images: [], stickies: [] };
+    return { strokes: [], symbols: [], images: [], fills: [], stickies: [] };
   }
 
   const maybeDocument = parsed as Partial<InkDocument>;
@@ -233,6 +248,7 @@ function parseStoredInk(raw: string): InkDocument {
     strokes: Array.isArray(maybeDocument.strokes) ? maybeDocument.strokes : [],
     symbols: Array.isArray(maybeDocument.symbols) ? maybeDocument.symbols : [],
     images: Array.isArray(maybeDocument.images) ? maybeDocument.images : [],
+    fills: Array.isArray(maybeDocument.fills) ? maybeDocument.fills : [],
     stickies: Array.isArray(maybeDocument.stickies)
       ? maybeDocument.stickies
       : [],
@@ -251,6 +267,132 @@ function clampStickyToCanvas(
     x: Math.min(Math.max(0, sticky.x), maxX),
     y: Math.min(Math.max(0, sticky.y), maxY),
   };
+}
+
+function rectMatches(a: InkClipRect, b: InkClipRect, tolerance = 1): boolean {
+  return (
+    Math.abs(a.x - b.x) <= tolerance &&
+    Math.abs(a.y - b.y) <= tolerance &&
+    Math.abs(a.width - b.width) <= tolerance &&
+    Math.abs(a.height - b.height) <= tolerance
+  );
+}
+
+function polygonBounds(points: InkPoint[]): InkClipRect | null {
+  if (!points.length) {
+    return null;
+  }
+
+  let minX = points[0].x;
+  let minY = points[0].y;
+  let maxX = points[0].x;
+  let maxY = points[0].y;
+
+  for (let i = 1; i < points.length; i += 1) {
+    const point = points[i];
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function pointInPolygon(point: InkPoint, polygon: InkPoint[]): boolean {
+  if (polygon.length < 3) {
+    return false;
+  }
+
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const pi = polygon[i];
+    const pj = polygon[j];
+
+    const intersects =
+      (pi.y > point.y) !== (pj.y > point.y) &&
+      point.x <
+        ((pj.x - pi.x) * (point.y - pi.y)) /
+          (pj.y - pi.y + Number.EPSILON) +
+          pi.x;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function crossProduct(a: InkPoint, b: InkPoint, c: InkPoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function pointOnSegment(a: InkPoint, b: InkPoint, p: InkPoint): boolean {
+  const minX = Math.min(a.x, b.x) - 0.0001;
+  const maxX = Math.max(a.x, b.x) + 0.0001;
+  const minY = Math.min(a.y, b.y) - 0.0001;
+  const maxY = Math.max(a.y, b.y) + 0.0001;
+  return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+}
+
+function segmentsIntersect(
+  a1: InkPoint,
+  a2: InkPoint,
+  b1: InkPoint,
+  b2: InkPoint,
+): boolean {
+  const d1 = crossProduct(a1, a2, b1);
+  const d2 = crossProduct(a1, a2, b2);
+  const d3 = crossProduct(b1, b2, a1);
+  const d4 = crossProduct(b1, b2, a2);
+
+  if (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  ) {
+    return true;
+  }
+
+  if (Math.abs(d1) < 0.0001 && pointOnSegment(a1, a2, b1)) {
+    return true;
+  }
+  if (Math.abs(d2) < 0.0001 && pointOnSegment(a1, a2, b2)) {
+    return true;
+  }
+  if (Math.abs(d3) < 0.0001 && pointOnSegment(b1, b2, a1)) {
+    return true;
+  }
+  if (Math.abs(d4) < 0.0001 && pointOnSegment(b1, b2, a2)) {
+    return true;
+  }
+
+  return false;
+}
+
+function segmentIntersectsPolygon(
+  start: InkPoint,
+  end: InkPoint,
+  polygon: InkPoint[],
+): boolean {
+  if (pointInPolygon(start, polygon) || pointInPolygon(end, polygon)) {
+    return true;
+  }
+
+  for (let i = 0; i < polygon.length; i += 1) {
+    const edgeStart = polygon[i];
+    const edgeEnd = polygon[(i + 1) % polygon.length];
+    if (segmentsIntersect(start, end, edgeStart, edgeEnd)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function drawWithClip(
@@ -450,6 +592,61 @@ function imageBounds(image: InkImage): InkClipRect {
   };
 }
 
+function fillBounds(fill: InkFill): InkClipRect {
+  return fill.rect;
+}
+
+function rectIntersectsPolygon(rect: InkClipRect, polygon: InkPoint[]): boolean {
+  const corners: InkPoint[] = [
+    { x: rect.x, y: rect.y, pressure: 1 },
+    { x: rect.x + rect.width, y: rect.y, pressure: 1 },
+    { x: rect.x + rect.width, y: rect.y + rect.height, pressure: 1 },
+    { x: rect.x, y: rect.y + rect.height, pressure: 1 },
+  ];
+
+  for (const corner of corners) {
+    if (pointInPolygon(corner, polygon)) {
+      return true;
+    }
+  }
+
+  for (const polygonPoint of polygon) {
+    if (rectContainsPoint(rect, polygonPoint)) {
+      return true;
+    }
+  }
+
+  for (let i = 0; i < corners.length; i += 1) {
+    const rectStart = corners[i];
+    const rectEnd = corners[(i + 1) % corners.length];
+    if (segmentIntersectsPolygon(rectStart, rectEnd, polygon)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function strokeIntersectsPolygon(stroke: InkStroke, polygon: InkPoint[]): boolean {
+  if (!stroke.points.length) {
+    return false;
+  }
+
+  for (const point of stroke.points) {
+    if (pointInPolygon(point, polygon)) {
+      return true;
+    }
+  }
+
+  for (let i = 1; i < stroke.points.length; i += 1) {
+    if (segmentIntersectsPolygon(stroke.points[i - 1], stroke.points[i], polygon)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function combineRects(rects: InkClipRect[]): InkClipRect | null {
   if (!rects.length) {
     return null;
@@ -540,6 +737,161 @@ function shapeStrokeFromPoints(
   };
 }
 
+function pathLength(points: InkPoint[]): number {
+  if (points.length < 2) {
+    return 0;
+  }
+
+  let length = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    length += Math.sqrt(dx * dx + dy * dy);
+  }
+  return length;
+}
+
+function pointToLineDistance(point: InkPoint, a: InkPoint, b: InkPoint): number {
+  return distancePointToSegment(point, a, b);
+}
+
+function detectAutoShapeStroke(
+  stroke: InkStroke,
+  holdDurationMs: number,
+): InkStroke | null {
+  if (holdDurationMs < AUTO_SHAPE_HOLD_MS || stroke.points.length < 8) {
+    return null;
+  }
+
+  const points = stroke.points;
+  let minX = points[0].x;
+  let maxX = points[0].x;
+  let minY = points[0].y;
+  let maxY = points[0].y;
+
+  for (let i = 1; i < points.length; i += 1) {
+    minX = Math.min(minX, points[i].x);
+    maxX = Math.max(maxX, points[i].x);
+    minY = Math.min(minY, points[i].y);
+    maxY = Math.max(maxY, points[i].y);
+  }
+
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const diagonal = Math.max(1, Math.sqrt(width * width + height * height));
+  if (diagonal < 16) {
+    return null;
+  }
+
+  const start = points[0];
+  const end = points[points.length - 1];
+  const closedDistance = Math.sqrt(
+    (end.x - start.x) * (end.x - start.x) + (end.y - start.y) * (end.y - start.y),
+  );
+  const isClosed = closedDistance <= Math.max(12, diagonal * 0.22);
+
+  if (!isClosed) {
+    let maxDistance = 0;
+    for (const point of points) {
+      maxDistance = Math.max(maxDistance, pointToLineDistance(point, start, end));
+    }
+    if (maxDistance <= Math.max(6, diagonal * 0.09)) {
+      return shapeStrokeFromPoints(
+        "line",
+        start,
+        end,
+        stroke.color,
+        stroke.width,
+        stroke.opacity,
+        stroke.clipRect,
+      );
+    }
+    return null;
+  }
+
+  const tolerance = Math.max(8, Math.min(width, height) * 0.2);
+  let nearEdgeCount = 0;
+  for (const point of points) {
+    const distanceToNearestEdge = Math.min(
+      Math.abs(point.x - minX),
+      Math.abs(point.x - maxX),
+      Math.abs(point.y - minY),
+      Math.abs(point.y - maxY),
+    );
+    if (distanceToNearestEdge <= tolerance) {
+      nearEdgeCount += 1;
+    }
+  }
+  const edgeCoverage = nearEdgeCount / points.length;
+
+  const cornerTolerance = tolerance * 1.5;
+  const corners = [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+  let touchedCorners = 0;
+  for (const corner of corners) {
+    const touched = points.some((point) => {
+      const dx = point.x - corner.x;
+      const dy = point.y - corner.y;
+      return dx * dx + dy * dy <= cornerTolerance * cornerTolerance;
+    });
+    if (touched) {
+      touchedCorners += 1;
+    }
+  }
+
+  if (edgeCoverage >= 0.72 && touchedCorners >= 3) {
+    return shapeStrokeFromPoints(
+      "rectangle",
+      { x: minX, y: minY, pressure: 1 },
+      { x: maxX, y: maxY, pressure: 1 },
+      stroke.color,
+      stroke.width,
+      stroke.opacity,
+      stroke.clipRect,
+    );
+  }
+
+  const radiusX = width / 2;
+  const radiusY = height / 2;
+  if (radiusX < 8 || radiusY < 8) {
+    return null;
+  }
+
+  const centerX = minX + radiusX;
+  const centerY = minY + radiusY;
+  let ellipseErrorSum = 0;
+  for (const point of points) {
+    const normalized =
+      ((point.x - centerX) * (point.x - centerX)) / (radiusX * radiusX) +
+      ((point.y - centerY) * (point.y - centerY)) / (radiusY * radiusY);
+    ellipseErrorSum += Math.abs(normalized - 1);
+  }
+  const meanEllipseError = ellipseErrorSum / points.length;
+
+  const travel = pathLength(points);
+  const ellipsePerimeterApprox =
+    Math.PI * (3 * (radiusX + radiusY) - Math.sqrt((3 * radiusX + radiusY) * (radiusX + 3 * radiusY)));
+  const perimeterRatio = ellipsePerimeterApprox > 0 ? travel / ellipsePerimeterApprox : 0;
+
+  if (meanEllipseError <= 0.34 && perimeterRatio > 0.65 && perimeterRatio < 1.45) {
+    return shapeStrokeFromPoints(
+      "ellipse",
+      { x: minX, y: minY, pressure: 1 },
+      { x: maxX, y: maxY, pressure: 1 },
+      stroke.color,
+      stroke.width,
+      stroke.opacity,
+      stroke.clipRect,
+    );
+  }
+
+  return null;
+}
+
 export default function InkLayer({
   pageId,
   allowTouch = false,
@@ -560,6 +912,7 @@ export default function InkLayer({
   const strokesRef = useRef<InkStroke[]>([]);
   const symbolsRef = useRef<InkSymbol[]>([]);
   const imagesRef = useRef<InkImage[]>([]);
+  const fillsRef = useRef<InkFill[]>([]);
   const stickiesRef = useRef<InkSticky[]>([]);
   const [stickyNotes, setStickyNotes] = useState<InkSticky[]>([]);
   const activeStrokeRef = useRef<ActiveStroke | null>(null);
@@ -585,6 +938,7 @@ export default function InkLayer({
         strokes: strokesRef.current,
         symbols: symbolsRef.current,
         images: imagesRef.current,
+        fills: fillsRef.current,
         stickies: stickiesRef.current,
       };
       localStorage.setItem(storageKey(pageId), JSON.stringify(payload));
@@ -604,7 +958,7 @@ export default function InkLayer({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const surface = canvas?.parentElement;
+    const surface = canvas?.closest<HTMLElement>(".planner-paper");
     if (!canvas || !surface) {
       return;
     }
@@ -634,6 +988,13 @@ export default function InkLayer({
       const rect = canvas.getBoundingClientRect();
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
       ctx.clearRect(0, 0, rect.width, rect.height);
+
+      for (const fill of fillsRef.current) {
+        ctx.fillStyle = fill.color;
+        ctx.globalAlpha = clampOpacity(fill.opacity);
+        ctx.fillRect(fill.rect.x, fill.rect.y, fill.rect.width, fill.rect.height);
+        ctx.globalAlpha = 1;
+      }
 
       for (const imageItem of imagesRef.current) {
         drawWithClip(ctx, imageItem.clipRect, () => {
@@ -749,13 +1110,20 @@ export default function InkLayer({
       }
 
       const activeLasso = activeLassoRef.current;
-      if (activeLasso) {
-        const rectValue = makeRectFromPoints(activeLasso.start, activeLasso.current);
+      if (activeLasso && activeLasso.points.length) {
         ctx.save();
         ctx.setLineDash([6, 4]);
         ctx.lineWidth = 1;
         ctx.strokeStyle = "#6f625d";
-        ctx.strokeRect(rectValue.x, rectValue.y, rectValue.width, rectValue.height);
+        ctx.beginPath();
+        ctx.moveTo(activeLasso.points[0].x, activeLasso.points[0].y);
+        for (let i = 1; i < activeLasso.points.length; i += 1) {
+          ctx.lineTo(activeLasso.points[i].x, activeLasso.points[i].y);
+        }
+        if (activeLasso.points.length >= 3) {
+          ctx.closePath();
+        }
+        ctx.stroke();
         ctx.restore();
       }
 
@@ -845,6 +1213,16 @@ export default function InkLayer({
         );
       });
 
+      const nextFills = fillsRef.current.filter((fill) => {
+        const bounds = fillBounds(fill);
+        return !(
+          point.x >= bounds.x - radius &&
+          point.x <= bounds.x + bounds.width + radius &&
+          point.y >= bounds.y - radius &&
+          point.y <= bounds.y + bounds.height + radius
+        );
+      });
+
       const nextStickies = stickiesRef.current.filter((sticky) => {
         return !(
           point.x >= sticky.x - radius &&
@@ -858,11 +1236,13 @@ export default function InkLayer({
         nextStrokes.length !== strokesRef.current.length ||
         nextSymbols.length !== symbolsRef.current.length ||
         nextImages.length !== imagesRef.current.length ||
+        nextFills.length !== fillsRef.current.length ||
         nextStickies.length !== stickiesRef.current.length
       ) {
         strokesRef.current = nextStrokes;
         symbolsRef.current = nextSymbols;
         imagesRef.current = nextImages;
+        fillsRef.current = nextFills;
         stickiesRef.current = nextStickies;
         setStickyNotes(nextStickies);
         persistInk();
@@ -870,15 +1250,24 @@ export default function InkLayer({
       }
     };
 
-    const computeLassoSelection = (rect: InkClipRect): LassoSelection | null => {
+    const computeLassoSelection = (polygon: InkPoint[]): LassoSelection | null => {
+      const polygonRect = polygonBounds(polygon);
+      if (!polygonRect) {
+        return null;
+      }
+
       const strokeIndexes: number[] = [];
       const symbolIndexes: number[] = [];
       const imageIndexes: number[] = [];
+      const fillIndexes: number[] = [];
       const selectedBounds: InkClipRect[] = [];
 
       for (let i = 0; i < strokesRef.current.length; i += 1) {
         const bounds = strokeBounds(strokesRef.current[i]);
-        if (!bounds || !rectsIntersect(rect, bounds)) {
+        if (!bounds || !rectsIntersect(polygonRect, bounds)) {
+          continue;
+        }
+        if (!strokeIntersectsPolygon(strokesRef.current[i], polygon)) {
           continue;
         }
         strokeIndexes.push(i);
@@ -887,7 +1276,10 @@ export default function InkLayer({
 
       for (let i = 0; i < symbolsRef.current.length; i += 1) {
         const bounds = symbolBounds(symbolsRef.current[i]);
-        if (!rectsIntersect(rect, bounds)) {
+        if (!rectsIntersect(polygonRect, bounds)) {
+          continue;
+        }
+        if (!rectIntersectsPolygon(bounds, polygon)) {
           continue;
         }
         symbolIndexes.push(i);
@@ -896,10 +1288,25 @@ export default function InkLayer({
 
       for (let i = 0; i < imagesRef.current.length; i += 1) {
         const bounds = imageBounds(imagesRef.current[i]);
-        if (!rectsIntersect(rect, bounds)) {
+        if (!rectsIntersect(polygonRect, bounds)) {
+          continue;
+        }
+        if (!rectIntersectsPolygon(bounds, polygon)) {
           continue;
         }
         imageIndexes.push(i);
+        selectedBounds.push(bounds);
+      }
+
+      for (let i = 0; i < fillsRef.current.length; i += 1) {
+        const bounds = fillBounds(fillsRef.current[i]);
+        if (!rectsIntersect(polygonRect, bounds)) {
+          continue;
+        }
+        if (!rectIntersectsPolygon(bounds, polygon)) {
+          continue;
+        }
+        fillIndexes.push(i);
         selectedBounds.push(bounds);
       }
 
@@ -912,6 +1319,7 @@ export default function InkLayer({
         strokeIndexes,
         symbolIndexes,
         imageIndexes,
+        fillIndexes,
         bounds,
       };
     };
@@ -944,6 +1352,14 @@ export default function InkLayer({
           continue;
         }
         selectedBounds.push(imageBounds(currentImage));
+      }
+
+      for (const index of selection.fillIndexes) {
+        const fill = fillsRef.current[index];
+        if (!fill) {
+          continue;
+        }
+        selectedBounds.push(fillBounds(fill));
       }
 
       return combineRects(selectedBounds);
@@ -982,6 +1398,18 @@ export default function InkLayer({
         }
         currentImage.x += deltaX;
         currentImage.y += deltaY;
+      }
+
+      for (const index of selection.fillIndexes) {
+        const fill = fillsRef.current[index];
+        if (!fill) {
+          continue;
+        }
+        fill.rect = {
+          ...fill.rect,
+          x: fill.rect.x + deltaX,
+          y: fill.rect.y + deltaY,
+        };
       }
     };
 
@@ -1069,6 +1497,29 @@ export default function InkLayer({
         return;
       }
 
+      if (mode === "bucket") {
+        const fillRect = getCellClipRect(event, surface);
+        if (!fillRect) {
+          return;
+        }
+
+        const nextFill: InkFill = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          rect: fillRect,
+          color,
+          opacity: BUCKET_FILL_OPACITY,
+        };
+        const withoutExistingFill = fillsRef.current.filter(
+          (candidate) => !rectMatches(candidate.rect, fillRect),
+        );
+        fillsRef.current = [...withoutExistingFill, nextFill];
+        persistInk();
+        redraw();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (mode === "shape") {
         activeShapeRef.current = {
           pointerId: event.pointerId,
@@ -1098,8 +1549,7 @@ export default function InkLayer({
         lassoSelectionRef.current = null;
         activeLassoRef.current = {
           pointerId: event.pointerId,
-          start: point,
-          current: point,
+          points: [point],
         };
         event.preventDefault();
         event.stopPropagation();
@@ -1189,6 +1639,7 @@ export default function InkLayer({
           points: [point],
           clipRect,
         },
+        lastMoveTime: Date.now(),
       };
 
       lassoSelectionRef.current = null;
@@ -1245,8 +1696,14 @@ export default function InkLayer({
       const activeLasso = activeLassoRef.current;
       if (activeLasso && activeLasso.pointerId === event.pointerId) {
         const rect = canvas.getBoundingClientRect();
-        activeLasso.current = getRelativePoint(event, rect);
-        updatePenTapMovement(event.pointerId, activeLasso.current);
+        const currentPoint = getRelativePoint(event, rect);
+        updatePenTapMovement(event.pointerId, currentPoint);
+        const lastPoint = activeLasso.points[activeLasso.points.length - 1];
+        const deltaX = currentPoint.x - lastPoint.x;
+        const deltaY = currentPoint.y - lastPoint.y;
+        if (deltaX * deltaX + deltaY * deltaY >= 9) {
+          activeLasso.points = [...activeLasso.points, currentPoint];
+        }
         redraw();
         event.preventDefault();
         event.stopPropagation();
@@ -1261,7 +1718,14 @@ export default function InkLayer({
       const rect = canvas.getBoundingClientRect();
       const latestPoint = getRelativePoint(event, rect);
       updatePenTapMovement(event.pointerId, latestPoint);
+      const previousPoint =
+        activeStroke.stroke.points[activeStroke.stroke.points.length - 1];
+      const movementX = latestPoint.x - previousPoint.x;
+      const movementY = latestPoint.y - previousPoint.y;
       activeStroke.stroke.points.push(latestPoint);
+      if (movementX * movementX + movementY * movementY >= 4) {
+        activeStroke.lastMoveTime = Date.now();
+      }
       drawStrokeSegment(activeStroke.stroke);
       event.preventDefault();
       event.stopPropagation();
@@ -1310,17 +1774,18 @@ export default function InkLayer({
 
       const activeLasso = activeLassoRef.current;
       if (activeLasso && activeLasso.pointerId === event.pointerId) {
-        const lassoRect = makeRectFromPoints(activeLasso.start, activeLasso.current);
+        const lassoPolygon = activeLasso.points;
+        const lassoRect = polygonBounds(lassoPolygon);
         activeLassoRef.current = null;
 
-        if (lassoRect.width < 6 || lassoRect.height < 6) {
+        if (!lassoRect || lassoRect.width < 6 || lassoRect.height < 6) {
           lassoSelectionRef.current = null;
           redraw();
           event.stopPropagation();
           return;
         }
 
-        lassoSelectionRef.current = computeLassoSelection(lassoRect);
+        lassoSelectionRef.current = computeLassoSelection(lassoPolygon);
         redraw();
         event.stopPropagation();
         return;
@@ -1346,10 +1811,23 @@ export default function InkLayer({
       }
 
       if (!isPenDoubleTap && activeStroke.stroke.points.length) {
-        strokesRef.current = [...strokesRef.current, activeStroke.stroke];
+        const shouldSnapShape =
+          mode === "draw" &&
+          event.pointerType === "pen" &&
+          !symbol &&
+          Date.now() - activeStroke.lastMoveTime >= AUTO_SHAPE_HOLD_MS;
+        const autoShapeStroke = shouldSnapShape
+          ? detectAutoShapeStroke(
+              activeStroke.stroke,
+              Date.now() - activeStroke.lastMoveTime,
+            )
+          : null;
+        const finalizedStroke = autoShapeStroke ?? activeStroke.stroke;
+
+        strokesRef.current = [...strokesRef.current, finalizedStroke];
         if (
           event.pointerType === "pen" &&
-          activeStroke.stroke.points.length <= 2
+          finalizedStroke.points.length <= 2
         ) {
           lastPenTapArtifactRef.current = {
             index: strokesRef.current.length - 1,
@@ -1517,6 +1995,7 @@ export default function InkLayer({
     strokesRef.current = [];
     symbolsRef.current = [];
     imagesRef.current = [];
+    fillsRef.current = [];
     stickiesRef.current = [];
     activeStrokeRef.current = null;
     activeEraserPointerIdRef.current = null;
@@ -1536,12 +2015,14 @@ export default function InkLayer({
         strokesRef.current = parsed.strokes;
         symbolsRef.current = parsed.symbols;
         imagesRef.current = parsed.images;
+        fillsRef.current = parsed.fills;
         stickiesRef.current = parsed.stickies;
       }
     } catch {
       strokesRef.current = [];
       symbolsRef.current = [];
       imagesRef.current = [];
+      fillsRef.current = [];
       stickiesRef.current = [];
     }
 

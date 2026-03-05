@@ -22,7 +22,14 @@ interface MonthlyViewProps {
   inkLineWidth?: number;
   inkOpacity?: number;
   inkSymbol?: string | null;
-  inkMode?: "draw" | "erase" | "shape" | "lasso" | "image" | "sticky";
+  inkMode?:
+    | "draw"
+    | "erase"
+    | "bucket"
+    | "shape"
+    | "lasso"
+    | "image"
+    | "sticky";
   inkShapeKind?: "line" | "rectangle" | "ellipse";
   inkImageSrc?: string | null;
   inkEraseRadius?: number;

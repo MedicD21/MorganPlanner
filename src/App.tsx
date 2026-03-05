@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import "./App.css";
 import MonthlyView from "./planner/MonthlyView";
@@ -28,12 +29,15 @@ const DEFAULT_COLOR_PALETTE = [
   "#5f5f63",
 ];
 const SIZE_PRESETS = [1.1, 2.1, 3.1, 4.2];
+const MIN_ZOOM_SCALE = 1;
+const MAX_ZOOM_SCALE = 2.8;
 
 type ShapeKind = "line" | "rectangle" | "ellipse";
 type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
 type InkTool =
   | DrawingTool
   | "eraser"
+  | "bucket"
   | "lasso"
   | "elements"
   | "text"
@@ -52,11 +56,28 @@ interface SymbolOption {
   value: string;
 }
 
+interface TouchPoint {
+  x: number;
+  y: number;
+}
+
+interface PinchGestureState {
+  startDistance: number;
+  startScale: number;
+  startTranslateX: number;
+  startTranslateY: number;
+  startRectLeft: number;
+  startRectTop: number;
+  contentX: number;
+  contentY: number;
+}
+
 const TOOL_LABELS: Record<InkTool, string> = {
   pen: "Pen",
   pencil: "Pencil",
   highlighter: "Highlighter",
   eraser: "Eraser",
+  bucket: "Bucket",
   shape: "Shape",
   lasso: "Lasso",
   elements: "Elements",
@@ -69,6 +90,7 @@ const TOOL_SEQUENCE: InkTool[] = [
   "pen",
   "pencil",
   "highlighter",
+  "bucket",
   "eraser",
   "shape",
   "lasso",
@@ -126,6 +148,15 @@ function ToolIcon({ tool }: { tool: InkTool }) {
       <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
         <path d="M6 15l6-8 7 5-6 8H6z" />
         <path d="M4 19h16" />
+      </svg>
+    );
+  }
+
+  if (tool === "bucket") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <path d="M6 11l6-6 6 6-6 6-6-6z" />
+        <path d="M4 18h16" />
       </svg>
     );
   }
@@ -209,6 +240,10 @@ function clampStrokeSize(value: number): number {
     return DEFAULT_STROKE_SIZE;
   }
   return Math.min(Math.max(value, 0.8), 4.8);
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function isDrawingTool(tool: InkTool): tool is DrawingTool {
@@ -316,6 +351,11 @@ export default function App() {
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [textStamp, setTextStamp] = useState<string>("note");
   const [stickyTemplate, setStickyTemplate] = useState<string>("new note");
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [zoomOffset, setZoomOffset] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
   const [imageStampSrc, setImageStampSrc] = useState<string | null>(null);
   const [favoriteColors, setFavoriteColors] = useState<string[]>(
     loadFavoriteColors,
@@ -324,7 +364,13 @@ export default function App() {
     loadFavoriteStyles,
   );
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const plannerStageRef = useRef<HTMLDivElement | null>(null);
+  const zoomSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastNonEraserToolRef = useRef<InkTool>("pen");
+  const activeTouchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
+  const pinchGestureRef = useRef<PinchGestureState | null>(null);
+  const zoomScaleRef = useRef<number>(1);
+  const zoomOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const effectiveInk = useMemo(() => {
     if (activeTool === "eraser") {
@@ -370,6 +416,7 @@ export default function App() {
 
   const canSaveStyle = isDrawingTool(activeTool);
   const isStrokeEnabled =
+    activeTool !== "bucket" &&
     activeTool !== "lasso" &&
     activeTool !== "elements" &&
     activeTool !== "text" &&
@@ -415,6 +462,14 @@ export default function App() {
   }, [activeTool]);
 
   useEffect(() => {
+    zoomScaleRef.current = zoomScale;
+  }, [zoomScale]);
+
+  useEffect(() => {
+    zoomOffsetRef.current = zoomOffset;
+  }, [zoomOffset]);
+
+  useEffect(() => {
     // Keep the app fixed in-place on iPad while preserving pinch zoom.
     const preventSingleFingerPan = (event: TouchEvent) => {
       if (event.touches.length === 1) {
@@ -443,6 +498,7 @@ export default function App() {
     setActiveTool(tool);
     if (
       tool === "eraser" ||
+      tool === "bucket" ||
       tool === "lasso" ||
       tool === "shape" ||
       tool === "image" ||
@@ -464,6 +520,170 @@ export default function App() {
       return "eraser";
     });
     setActiveSymbol("");
+  };
+
+  const clampZoomOffset = (
+    candidate: { x: number; y: number },
+    scale: number,
+  ) => {
+    const surface = zoomSurfaceRef.current;
+    if (!surface || scale <= MIN_ZOOM_SCALE + 0.001) {
+      return { x: 0, y: 0 };
+    }
+
+    const maxX = Math.max(0, ((surface.offsetWidth || 0) * (scale - 1)) / 2);
+    const maxY = Math.max(0, ((surface.offsetHeight || 0) * (scale - 1)) / 2);
+
+    return {
+      x: clampValue(candidate.x, -maxX, maxX),
+      y: clampValue(candidate.y, -maxY, maxY),
+    };
+  };
+
+  const applyZoomTransform = (
+    scaleValue: number,
+    offsetValue: { x: number; y: number },
+  ) => {
+    const clampedScale = clampValue(scaleValue, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
+    const clampedOffset = clampZoomOffset(offsetValue, clampedScale);
+    zoomScaleRef.current = clampedScale;
+    zoomOffsetRef.current = clampedOffset;
+    setZoomScale(clampedScale);
+    setZoomOffset(clampedOffset);
+  };
+
+  const beginPinchGesture = () => {
+    const surface = zoomSurfaceRef.current;
+    if (!surface || activeTouchPointsRef.current.size < 2) {
+      pinchGestureRef.current = null;
+      return;
+    }
+
+    const [firstPoint, secondPoint] = Array.from(
+      activeTouchPointsRef.current.values(),
+    ).slice(0, 2);
+    const distance = Math.hypot(
+      secondPoint.x - firstPoint.x,
+      secondPoint.y - firstPoint.y,
+    );
+    if (distance < 2) {
+      pinchGestureRef.current = null;
+      return;
+    }
+
+    const centerX = (firstPoint.x + secondPoint.x) / 2;
+    const centerY = (firstPoint.y + secondPoint.y) / 2;
+    const rect = surface.getBoundingClientRect();
+    const currentScale = zoomScaleRef.current;
+
+    pinchGestureRef.current = {
+      startDistance: distance,
+      startScale: currentScale,
+      startTranslateX: zoomOffsetRef.current.x,
+      startTranslateY: zoomOffsetRef.current.y,
+      startRectLeft: rect.left,
+      startRectTop: rect.top,
+      contentX: (centerX - rect.left) / currentScale,
+      contentY: (centerY - rect.top) / currentScale,
+    };
+  };
+
+  const handleStagePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    activeTouchPointsRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activeTouchPointsRef.current.size >= 2) {
+      beginPinchGesture();
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handleStagePointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (
+      event.pointerType !== "touch" ||
+      !activeTouchPointsRef.current.has(event.pointerId)
+    ) {
+      return;
+    }
+
+    activeTouchPointsRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (activeTouchPointsRef.current.size < 2) {
+      return;
+    }
+
+    if (!pinchGestureRef.current) {
+      beginPinchGesture();
+    }
+    const pinch = pinchGestureRef.current;
+    if (!pinch) {
+      return;
+    }
+
+    const [firstPoint, secondPoint] = Array.from(
+      activeTouchPointsRef.current.values(),
+    ).slice(0, 2);
+    const currentDistance = Math.hypot(
+      secondPoint.x - firstPoint.x,
+      secondPoint.y - firstPoint.y,
+    );
+    const centerX = (firstPoint.x + secondPoint.x) / 2;
+    const centerY = (firstPoint.y + secondPoint.y) / 2;
+
+    const nextScale = clampValue(
+      pinch.startScale * (currentDistance / pinch.startDistance),
+      MIN_ZOOM_SCALE,
+      MAX_ZOOM_SCALE,
+    );
+
+    if (nextScale <= MIN_ZOOM_SCALE + 0.001) {
+      applyZoomTransform(1, { x: 0, y: 0 });
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const nextRectLeft = centerX - pinch.contentX * nextScale;
+    const nextRectTop = centerY - pinch.contentY * nextScale;
+    const nextOffset = {
+      x: pinch.startTranslateX + (nextRectLeft - pinch.startRectLeft),
+      y: pinch.startTranslateY + (nextRectTop - pinch.startRectTop),
+    };
+
+    applyZoomTransform(nextScale, nextOffset);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const clearStageTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    const hadPinch = pinchGestureRef.current !== null;
+    activeTouchPointsRef.current.delete(event.pointerId);
+    if (activeTouchPointsRef.current.size < 2) {
+      pinchGestureRef.current = null;
+    }
+
+    if (hadPinch) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   };
 
   const saveCurrentColor = () => {
@@ -536,6 +756,7 @@ export default function App() {
   const activeInkMode:
     | "draw"
     | "erase"
+    | "bucket"
     | "shape"
     | "lasso"
     | "image"
@@ -545,6 +766,9 @@ export default function App() {
     }
     if (activeTool === "shape") {
       return "shape";
+    }
+    if (activeTool === "bucket") {
+      return "bucket";
     }
     if (activeTool === "lasso") {
       return "lasso";
@@ -565,9 +789,57 @@ export default function App() {
         ? textStamp.trim() || "note"
         : null;
 
+  const handleToolbarPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== "pen") {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const button = target.closest("button") as HTMLButtonElement | null;
+    if (button && !button.disabled) {
+      event.preventDefault();
+      button.click();
+      return;
+    }
+
+    const colorInput = target.closest(
+      'input[type="color"]',
+    ) as HTMLInputElement | null;
+    if (colorInput && !colorInput.disabled) {
+      event.preventDefault();
+      colorInput.focus();
+      colorInput.click();
+      return;
+    }
+
+    const checkboxInput = target.closest(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement | null;
+    if (checkboxInput && !checkboxInput.disabled) {
+      event.preventDefault();
+      checkboxInput.click();
+      return;
+    }
+
+    const textInput = target.closest(
+      'input[type="text"], textarea',
+    ) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (textInput && !textInput.matches(":disabled")) {
+      textInput.focus();
+    }
+  };
+
   return (
     <main className="app-shell">
-      <header className="top-ink-toolbar" aria-label="Writing tools">
+      <header
+        className="top-ink-toolbar"
+        aria-label="Writing tools"
+        onPointerDownCapture={handleToolbarPointerDown}
+      >
         <div className="top-toolbar-row">
           <div className="top-toolbar-group">
             {TOOL_SEQUENCE.map((tool) => (
@@ -793,25 +1065,40 @@ export default function App() {
       </header>
 
       <div className="app-layout">
-        <div className="planner-stage">
-          <MonthlyView
-            year={DEFAULT_YEAR}
-            month={month}
-            weekIndex={weekIndex}
-            allowTouchInk={allowTouchInk}
-            inkColor={activeColor}
-            inkLineWidth={effectiveInk.lineWidth}
-            inkOpacity={effectiveInk.opacity}
-            inkSymbol={activeInkSymbol}
-            inkMode={activeInkMode}
-            inkShapeKind={shapeKind}
-            inkImageSrc={activeTool === "image" ? imageStampSrc : null}
-            inkEraseRadius={eraseRadius}
-            inkStickyTemplate={stickyTemplate}
-            onPenDoubleTap={toggleEraserFromPencilDoubleTap}
-            onMonthChange={handleMonthTabChange}
-            onWeekIndexChange={handleWeekTabChange}
-          />
+        <div
+          ref={plannerStageRef}
+          className="planner-stage"
+          onPointerDownCapture={handleStagePointerDown}
+          onPointerMoveCapture={handleStagePointerMove}
+          onPointerUpCapture={clearStageTouch}
+          onPointerCancelCapture={clearStageTouch}
+        >
+          <div
+            ref={zoomSurfaceRef}
+            className="planner-zoom-surface"
+            style={{
+              transform: `translate3d(${zoomOffset.x}px, ${zoomOffset.y}px, 0) scale(${zoomScale})`,
+            }}
+          >
+            <MonthlyView
+              year={DEFAULT_YEAR}
+              month={month}
+              weekIndex={weekIndex}
+              allowTouchInk={allowTouchInk}
+              inkColor={activeColor}
+              inkLineWidth={effectiveInk.lineWidth}
+              inkOpacity={effectiveInk.opacity}
+              inkSymbol={activeInkSymbol}
+              inkMode={activeInkMode}
+              inkShapeKind={shapeKind}
+              inkImageSrc={activeTool === "image" ? imageStampSrc : null}
+              inkEraseRadius={eraseRadius}
+              inkStickyTemplate={stickyTemplate}
+              onPenDoubleTap={toggleEraserFromPencilDoubleTap}
+              onMonthChange={handleMonthTabChange}
+              onWeekIndexChange={handleWeekTabChange}
+            />
+          </div>
         </div>
       </div>
     </main>

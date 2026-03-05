@@ -173,6 +173,13 @@
   touch-action: none;
 }
 
+.planner-zoom-surface {
+  display: inline-block;
+  transform-origin: 0 0;
+  will-change: transform;
+  touch-action: none;
+}
+
 .ink-toolbar {
   width: var(--tool-panel-width);
   height: 100%;
