@@ -1,5 +1,5 @@
 {
   "appId": "com.dushin.OnPurposePlanner.app",
   "appName": "OnPurpose Planner",
-  "webDir": ""
+  "webDir": "dist"
 }
