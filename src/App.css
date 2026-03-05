@@ -502,7 +502,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 1;
+  z-index: 3;
 }
 
 .sticky-layer {
@@ -517,13 +517,17 @@
   pointer-events: auto;
 }
 
+.sticky-note-passive {
+  pointer-events: none;
+}
+
 .sticky-note-expanded {
   display: grid;
   grid-template-rows: auto 1fr;
-  background: #faefb5;
-  border: 1px solid #d0b977;
+  background: var(--sticky-fill, #faefb5);
+  border: 1px solid var(--sticky-border, #d0b977);
   border-radius: 8px;
-  box-shadow: 0 7px 16px rgba(35, 27, 12, 0.25);
+  box-shadow: var(--sticky-shadow, 0 7px 16px rgba(35, 27, 12, 0.25));
   overflow: hidden;
 }
 
@@ -532,16 +536,16 @@
   justify-content: flex-end;
   gap: 0.2rem;
   padding: 0.2rem 0.22rem 0.06rem;
-  border-bottom: 1px solid rgba(140, 112, 45, 0.28);
-  background: rgba(252, 234, 161, 0.9);
+  border-bottom: 1px solid var(--sticky-border, rgba(140, 112, 45, 0.28));
+  background: var(--sticky-header, rgba(252, 234, 161, 0.9));
   cursor: move;
   user-select: none;
 }
 
 .sticky-note-action {
-  border: 1px solid rgba(110, 92, 52, 0.36);
-  background: rgba(255, 251, 235, 0.92);
-  color: #5f4e2a;
+  border: 1px solid var(--sticky-action-border, rgba(110, 92, 52, 0.36));
+  background: var(--sticky-action-bg, rgba(255, 251, 235, 0.92));
+  color: var(--sticky-action-text, #5f4e2a);
   border-radius: 4px;
   width: 1.05rem;
   height: 1.05rem;
@@ -558,7 +562,7 @@
   resize: none;
   outline: none;
   background: transparent;
-  color: #2f2b2a;
+  color: var(--sticky-text, #2f2b2a);
   font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
   font-size: 0.78rem;
   line-height: 1.35;
@@ -569,14 +573,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #c5ab68;
+  border: 1px solid var(--sticky-border, #c5ab68);
   border-radius: 6px;
-  background: #f6e59a;
-  color: #5e4b25;
+  background: var(--sticky-fill, #f6e59a);
+  color: var(--sticky-text, #5e4b25);
   font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
   font-size: 0.72rem;
   font-weight: 700;
-  box-shadow: 0 5px 10px rgba(35, 27, 12, 0.22);
+  box-shadow: var(--sticky-shadow, 0 5px 10px rgba(35, 27, 12, 0.22));
   cursor: pointer;
   padding: 0;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 export type InkInputType = "pen" | "touch" | "mouse" | "unknown";
 export type InkShapeKind = "line" | "rectangle" | "ellipse";
@@ -85,6 +85,7 @@ interface InkSticky {
   height: number;
   text: string;
   collapsed: boolean;
+  color?: string;
 }
 
 interface InkDocument {
@@ -138,6 +139,7 @@ interface LassoSelection {
 interface PointerLikeEvent {
   pointerId: number;
   pointerType: InkInputType;
+  isStylus: boolean;
   clientX: number;
   clientY: number;
   pressure: number;
@@ -153,6 +155,7 @@ const DEFAULT_STICKY_HEIGHT = 134;
 const COLLAPSED_STICKY_SIZE = 30;
 const BUCKET_FILL_OPACITY = 0.28;
 const AUTO_SHAPE_HOLD_MS = 260;
+const DEFAULT_STICKY_COLOR = "#faefb5";
 
 function normalizeInputType(pointerType: string): InkInputType {
   if (pointerType === "pen" || pointerType === "touch" || pointerType === "mouse") {
@@ -161,8 +164,111 @@ function normalizeInputType(pointerType: string): InkInputType {
   return "unknown";
 }
 
+function isLikelyStylusPointer(event: PointerEvent): boolean {
+  const pointerWithTouchType = event as PointerEvent & { touchType?: string };
+  if (event.pointerType === "pen" || pointerWithTouchType.touchType === "stylus") {
+    return true;
+  }
+
+  if (event.pointerType !== "touch") {
+    return false;
+  }
+
+  if ((Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) && event.pressure > 0) {
+    return true;
+  }
+
+  if (
+    event.width > 0 &&
+    event.height > 0 &&
+    event.width <= 8 &&
+    event.height <= 8 &&
+    event.pressure > 0
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function storageKey(pageId: string): string {
   return `${STORAGE_PREFIX}:${pageId}`;
+}
+
+function isHexColor(value: string): boolean {
+  return /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function normalizeStickyColor(value: string | undefined): string {
+  if (!value) {
+    return DEFAULT_STICKY_COLOR;
+  }
+  const normalized = value.toLowerCase();
+  if (isHexColor(normalized)) {
+    return normalized;
+  }
+  return DEFAULT_STICKY_COLOR;
+}
+
+function parseHexColor(
+  hex: string,
+): { r: number; g: number; b: number } | null {
+  if (!isHexColor(hex)) {
+    return null;
+  }
+  const clean = hex.slice(1);
+  const r = Number.parseInt(clean.slice(0, 2), 16);
+  const g = Number.parseInt(clean.slice(2, 4), 16);
+  const b = Number.parseInt(clean.slice(4, 6), 16);
+  return { r, g, b };
+}
+
+function toHexChannel(value: number): string {
+  return Math.round(Math.min(255, Math.max(0, value)))
+    .toString(16)
+    .padStart(2, "0");
+}
+
+function adjustHexColor(hex: string, delta: number): string {
+  const rgb = parseHexColor(hex);
+  if (!rgb) {
+    return hex;
+  }
+
+  const transform = (channel: number) => {
+    if (delta >= 0) {
+      return channel + (255 - channel) * delta;
+    }
+    return channel * (1 + delta);
+  };
+
+  const r = transform(rgb.r);
+  const g = transform(rgb.g);
+  const b = transform(rgb.b);
+  return `#${toHexChannel(r)}${toHexChannel(g)}${toHexChannel(b)}`;
+}
+
+function stickyTextColor(hex: string): string {
+  const rgb = parseHexColor(hex);
+  if (!rgb) {
+    return "#2f2b2a";
+  }
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return luminance > 0.62 ? "#2f2b2a" : "#f8f6f3";
+}
+
+function stickyStyleVars(sticky: InkSticky): CSSProperties {
+  const base = normalizeStickyColor(sticky.color);
+  return {
+    "--sticky-fill": base,
+    "--sticky-header": adjustHexColor(base, 0.1),
+    "--sticky-border": adjustHexColor(base, -0.28),
+    "--sticky-action-bg": adjustHexColor(base, 0.25),
+    "--sticky-action-border": adjustHexColor(base, -0.22),
+    "--sticky-action-text": stickyTextColor(adjustHexColor(base, -0.42)),
+    "--sticky-text": stickyTextColor(base),
+    "--sticky-shadow": "0 7px 16px rgba(35, 27, 12, 0.25)",
+  } as CSSProperties;
 }
 
 function clampPressure(pressure: number): number {
@@ -927,6 +1033,8 @@ export default function InkLayer({
   const dprRef = useRef(1);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const pointerFromTouchIdRef = useRef<Map<number, number>>(new Map());
+  const touchStylusByPointerIdRef = useRef<Map<number, boolean>>(new Map());
+  const stylusPointerIdsRef = useRef<Set<number>>(new Set());
   const nextTouchPointerIdRef = useRef<number>(40000);
   const activePenTapCandidateRef = useRef<PenTapCandidate | null>(null);
   const lastPenTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -1181,13 +1289,22 @@ export default function InkLayer({
       });
     };
 
-    const canDrawWithInput = (inputType: InkInputType) => {
+    const canDrawWithInput = (event: PointerLikeEvent) => {
+      if (event.isStylus) {
+        return true;
+      }
       return (
-        inputType === "pen" ||
-        inputType === "mouse" ||
-        inputType === "unknown" ||
-        (allowTouch && inputType === "touch")
+        event.pointerType === "pen" ||
+        event.pointerType === "mouse" ||
+        event.pointerType === "unknown" ||
+        (allowTouch && event.pointerType === "touch")
       );
+    };
+
+    const maybeStopPropagation = (event: PointerLikeEvent) => {
+      if (event.pointerType !== "touch") {
+        event.stopPropagation();
+      }
     };
 
     const eraseAtPoint = (point: InkPoint) => {
@@ -1456,17 +1573,24 @@ export default function InkLayer({
     };
 
     const onStart = (event: PointerLikeEvent) => {
-      if (!canDrawWithInput(event.pointerType)) {
+      if (!canDrawWithInput(event)) {
         return;
       }
 
-      if (
-        event.target instanceof HTMLElement &&
-        event.target.closest(
-          "a, button, input, select, label, textarea, [data-sticky-note]",
-        )
-      ) {
-        return;
+      if (event.target instanceof HTMLElement) {
+        const isInkDrawingMode =
+          mode === "draw" ||
+          mode === "erase" ||
+          mode === "shape" ||
+          mode === "lasso";
+        const blockedTarget = isInkDrawingMode
+          ? event.target.closest("a, button, input, select, label")
+          : event.target.closest(
+              "a, button, input, select, label, textarea, [data-sticky-note]",
+            );
+        if (blockedTarget) {
+          return;
+        }
       }
 
       const clipRect = lockToCells ? getCellClipRect(event, surface) : null;
@@ -1493,7 +1617,7 @@ export default function InkLayer({
         activeEraserPointerIdRef.current = event.pointerId;
         eraseAtPoint(point);
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1516,7 +1640,7 @@ export default function InkLayer({
         persistInk();
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1529,7 +1653,7 @@ export default function InkLayer({
         };
         lassoSelectionRef.current = null;
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         redraw();
         return;
       }
@@ -1542,7 +1666,7 @@ export default function InkLayer({
             lastPoint: point,
           };
           event.preventDefault();
-          event.stopPropagation();
+          maybeStopPropagation(event);
           return;
         }
 
@@ -1552,7 +1676,7 @@ export default function InkLayer({
           points: [point],
         };
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         redraw();
         return;
       }
@@ -1566,6 +1690,7 @@ export default function InkLayer({
           height: DEFAULT_STICKY_HEIGHT,
           text: stickyTemplate.trim() || "new note",
           collapsed: false,
+          color: normalizeStickyColor(color),
         };
         const nextSticky = clampStickyToCanvas(
           unclampedSticky,
@@ -1577,7 +1702,7 @@ export default function InkLayer({
         setStickyNotes(nextStickies);
         persistInk();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1608,7 +1733,7 @@ export default function InkLayer({
         persistInk();
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1626,7 +1751,7 @@ export default function InkLayer({
         persistInk();
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1644,7 +1769,7 @@ export default function InkLayer({
 
       lassoSelectionRef.current = null;
       event.preventDefault();
-      event.stopPropagation();
+      maybeStopPropagation(event);
     };
 
     const onMove = (event: PointerLikeEvent) => {
@@ -1654,7 +1779,7 @@ export default function InkLayer({
         updatePenTapMovement(event.pointerId, point);
         eraseAtPoint(point);
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1665,7 +1790,7 @@ export default function InkLayer({
         updatePenTapMovement(event.pointerId, activeShape.current);
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1689,7 +1814,7 @@ export default function InkLayer({
         activeLassoDrag.lastPoint = currentPoint;
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1706,7 +1831,7 @@ export default function InkLayer({
         }
         redraw();
         event.preventDefault();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1728,7 +1853,7 @@ export default function InkLayer({
       }
       drawStrokeSegment(activeStroke.stroke);
       event.preventDefault();
-      event.stopPropagation();
+      maybeStopPropagation(event);
     };
 
     const onEnd = (event: PointerLikeEvent) => {
@@ -1739,7 +1864,7 @@ export default function InkLayer({
 
       if (activeEraserPointerIdRef.current === event.pointerId) {
         activeEraserPointerIdRef.current = null;
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1759,7 +1884,7 @@ export default function InkLayer({
         activeShapeRef.current = null;
         persistInk();
         redraw();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1768,7 +1893,7 @@ export default function InkLayer({
         activeLassoDragRef.current = null;
         persistInk();
         redraw();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1781,13 +1906,13 @@ export default function InkLayer({
         if (!lassoRect || lassoRect.width < 6 || lassoRect.height < 6) {
           lassoSelectionRef.current = null;
           redraw();
-          event.stopPropagation();
+          maybeStopPropagation(event);
           return;
         }
 
         lassoSelectionRef.current = computeLassoSelection(lassoPolygon);
         redraw();
-        event.stopPropagation();
+        maybeStopPropagation(event);
         return;
       }
 
@@ -1841,13 +1966,19 @@ export default function InkLayer({
 
       activeStrokeRef.current = null;
       redraw();
-      event.stopPropagation();
+      maybeStopPropagation(event);
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      const stylus = isLikelyStylusPointer(event);
+      if (stylus) {
+        stylusPointerIdsRef.current.add(event.pointerId);
+      }
+
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
-        pointerType: normalizeInputType(event.pointerType),
+        pointerType: stylus ? "pen" : normalizeInputType(event.pointerType),
+        isStylus: stylus,
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
@@ -1874,9 +2005,11 @@ export default function InkLayer({
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      const stylus = stylusPointerIdsRef.current.has(event.pointerId);
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
-        pointerType: normalizeInputType(event.pointerType),
+        pointerType: stylus ? "pen" : normalizeInputType(event.pointerType),
+        isStylus: stylus,
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
@@ -1892,9 +2025,11 @@ export default function InkLayer({
     };
 
     const finalizePointer = (event: PointerEvent) => {
+      const stylus = stylusPointerIdsRef.current.has(event.pointerId);
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
-        pointerType: normalizeInputType(event.pointerType),
+        pointerType: stylus ? "pen" : normalizeInputType(event.pointerType),
+        isStylus: stylus,
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
@@ -1908,6 +2043,7 @@ export default function InkLayer({
       };
 
       onEnd(pointerEvent);
+      stylusPointerIdsRef.current.delete(event.pointerId);
 
       if (surface.hasPointerCapture(event.pointerId)) {
         surface.releasePointerCapture(event.pointerId);
@@ -1922,10 +2058,14 @@ export default function InkLayer({
           nextTouchPointerIdRef.current += 1;
           pointerFromTouchIdRef.current.set(touch.identifier, pointerId);
         }
+        const touchWithType = touch as Touch & { touchType?: string };
+        const isStylus = touchWithType.touchType === "stylus";
+        touchStylusByPointerIdRef.current.set(pointerId, isStylus);
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,
-          pointerType: "touch",
+          pointerType: isStylus ? "pen" : "touch",
+          isStylus,
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
@@ -1947,10 +2087,12 @@ export default function InkLayer({
         if (!pointerId) {
           continue;
         }
+        const isStylus = touchStylusByPointerIdRef.current.get(pointerId) ?? false;
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,
-          pointerType: "touch",
+          pointerType: isStylus ? "pen" : "touch",
+          isStylus,
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
@@ -1973,10 +2115,14 @@ export default function InkLayer({
           continue;
         }
         pointerFromTouchIdRef.current.delete(touch.identifier);
+        const isStylus = touchStylusByPointerIdRef.current.get(pointerId) ?? false;
+        touchStylusByPointerIdRef.current.delete(pointerId);
+        stylusPointerIdsRef.current.delete(pointerId);
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,
-          pointerType: "touch",
+          pointerType: isStylus ? "pen" : "touch",
+          isStylus,
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
@@ -1997,6 +2143,9 @@ export default function InkLayer({
     imagesRef.current = [];
     fillsRef.current = [];
     stickiesRef.current = [];
+    pointerFromTouchIdRef.current.clear();
+    touchStylusByPointerIdRef.current.clear();
+    stylusPointerIdsRef.current.clear();
     activeStrokeRef.current = null;
     activeEraserPointerIdRef.current = null;
     activeShapeRef.current = null;
@@ -2026,11 +2175,17 @@ export default function InkLayer({
       stickiesRef.current = [];
     }
 
+    const normalizedStickies = stickiesRef.current.map((sticky) => ({
+      ...sticky,
+      color: normalizeStickyColor(sticky.color),
+    }));
+    stickiesRef.current = normalizedStickies;
+
     queueMicrotask(() => {
       if (canceled) {
         return;
       }
-      setStickyNotes(stickiesRef.current);
+      setStickyNotes(normalizedStickies);
     });
 
     resizeCanvas();
@@ -2144,6 +2299,8 @@ export default function InkLayer({
       <canvas ref={canvasRef} className="ink-layer-canvas" aria-hidden="true" />
       <div className="sticky-layer">
         {stickyNotes.map((sticky) => {
+          const stickyClassSuffix = mode === "sticky" ? "" : " sticky-note-passive";
+          const stickyThemeStyle = stickyStyleVars(sticky);
           if (sticky.collapsed) {
             const stickyLabel =
               typeof sticky.text === "string" && sticky.text.trim().length > 0
@@ -2154,8 +2311,9 @@ export default function InkLayer({
                 key={sticky.id}
                 type="button"
                 data-sticky-note
-                className="sticky-note sticky-note-collapsed"
+                className={`sticky-note sticky-note-collapsed${stickyClassSuffix}`}
                 style={{
+                  ...stickyThemeStyle,
                   left: `${sticky.x}px`,
                   top: `${sticky.y}px`,
                   width: `${COLLAPSED_STICKY_SIZE}px`,
@@ -2179,8 +2337,9 @@ export default function InkLayer({
             <section
               key={sticky.id}
               data-sticky-note
-              className="sticky-note sticky-note-expanded"
+              className={`sticky-note sticky-note-expanded${stickyClassSuffix}`}
               style={{
+                ...stickyThemeStyle,
                 left: `${sticky.x}px`,
                 top: `${sticky.y}px`,
                 width: `${sticky.width}px`,

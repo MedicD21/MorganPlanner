@@ -246,6 +246,41 @@ function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function isLikelyStylusPointerEvent(
+  event: ReactPointerEvent<HTMLElement>,
+): boolean {
+  if (event.pointerType === "pen") {
+    return true;
+  }
+
+  const nativeEvent = event.nativeEvent as PointerEvent & {
+    touchType?: string;
+  };
+  if (nativeEvent.touchType === "stylus") {
+    return true;
+  }
+
+  if (event.pointerType !== "touch") {
+    return false;
+  }
+
+  if ((Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) && event.pressure > 0) {
+    return true;
+  }
+
+  if (
+    event.width > 0 &&
+    event.height > 0 &&
+    event.width <= 8 &&
+    event.height <= 8 &&
+    event.pressure > 0
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function isDrawingTool(tool: InkTool): tool is DrawingTool {
   return (
     tool === "pen" ||
@@ -425,8 +460,7 @@ export default function App() {
   const isPaletteEnabled =
     activeTool !== "eraser" &&
     activeTool !== "lasso" &&
-    activeTool !== "image" &&
-    activeTool !== "sticky";
+    activeTool !== "image";
   const showShapeControls = activeTool === "shape";
   const showElementControls = activeTool === "elements";
   const showTextControls = activeTool === "text";
@@ -591,7 +625,7 @@ export default function App() {
   const handleStagePointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
-    if (event.pointerType !== "touch") {
+    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
       return;
     }
 
@@ -612,6 +646,7 @@ export default function App() {
   ) => {
     if (
       event.pointerType !== "touch" ||
+      isLikelyStylusPointerEvent(event) ||
       !activeTouchPointsRef.current.has(event.pointerId)
     ) {
       return;
@@ -670,7 +705,7 @@ export default function App() {
   };
 
   const clearStageTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "touch") {
+    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
       return;
     }
 
@@ -790,7 +825,7 @@ export default function App() {
         : null;
 
   const handleToolbarPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType !== "pen") {
+    if (!isLikelyStylusPointerEvent(event)) {
       return;
     }
 
