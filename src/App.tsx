@@ -37,7 +37,8 @@ type InkTool =
   | "lasso"
   | "elements"
   | "text"
-  | "image";
+  | "image"
+  | "sticky";
 
 interface FavoriteStyle {
   id: string;
@@ -61,6 +62,7 @@ const TOOL_LABELS: Record<InkTool, string> = {
   elements: "Elements",
   text: "Text",
   image: "Image",
+  sticky: "Post-it",
 };
 
 const TOOL_SEQUENCE: InkTool[] = [
@@ -73,6 +75,7 @@ const TOOL_SEQUENCE: InkTool[] = [
   "elements",
   "text",
   "image",
+  "sticky",
 ];
 
 const SHAPE_OPTIONS: Array<{ label: string; value: ShapeKind }> = [
@@ -163,6 +166,15 @@ function ToolIcon({ tool }: { tool: InkTool }) {
         <path d="M4 6h16" />
         <path d="M12 6v13" />
         <path d="M8 19h8" />
+      </svg>
+    );
+  }
+
+  if (tool === "sticky") {
+    return (
+      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
+        <rect x="4" y="4" width="15" height="15" rx="1.8" />
+        <path d="M13 19v-4.5c0-.9.7-1.5 1.5-1.5H19" />
       </svg>
     );
   }
@@ -303,6 +315,7 @@ export default function App() {
   const [activeSymbol, setActiveSymbol] = useState<string>("");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [textStamp, setTextStamp] = useState<string>("note");
+  const [stickyTemplate, setStickyTemplate] = useState<string>("new note");
   const [imageStampSrc, setImageStampSrc] = useState<string | null>(null);
   const [favoriteColors, setFavoriteColors] = useState<string[]>(
     loadFavoriteColors,
@@ -369,6 +382,7 @@ export default function App() {
   const showElementControls = activeTool === "elements";
   const showTextControls = activeTool === "text";
   const showImageControls = activeTool === "image";
+  const showStickyControls = activeTool === "sticky";
 
   useEffect(() => {
     try {
@@ -429,7 +443,8 @@ export default function App() {
       tool === "eraser" ||
       tool === "lasso" ||
       tool === "shape" ||
-      tool === "image"
+      tool === "image" ||
+      tool === "sticky"
     ) {
       setActiveSymbol("");
     }
@@ -516,7 +531,13 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const activeInkMode: "draw" | "erase" | "shape" | "lasso" | "image" = (() => {
+  const activeInkMode:
+    | "draw"
+    | "erase"
+    | "shape"
+    | "lasso"
+    | "image"
+    | "sticky" = (() => {
     if (activeTool === "eraser") {
       return "erase";
     }
@@ -528,6 +549,9 @@ export default function App() {
     }
     if (activeTool === "image") {
       return "image";
+    }
+    if (activeTool === "sticky") {
+      return "sticky";
     }
     return "draw";
   })();
@@ -748,6 +772,20 @@ export default function App() {
                 />
               </>
             ) : null}
+
+            {showStickyControls ? (
+              <input
+                type="text"
+                value={stickyTemplate}
+                onChange={(event) => {
+                  setStickyTemplate(event.target.value);
+                }}
+                className="top-toolbar-text-input"
+                placeholder="Post-it text"
+                maxLength={140}
+                aria-label="Default post-it text"
+              />
+            ) : null}
           </div>
         </div>
       </header>
@@ -767,6 +805,7 @@ export default function App() {
             inkShapeKind={shapeKind}
             inkImageSrc={activeTool === "image" ? imageStampSrc : null}
             inkEraseRadius={eraseRadius}
+            inkStickyTemplate={stickyTemplate}
             onPenDoubleTap={toggleEraserFromPencilDoubleTap}
             onMonthChange={handleMonthTabChange}
             onWeekIndexChange={handleWeekTabChange}
