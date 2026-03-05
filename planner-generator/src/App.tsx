@@ -11,12 +11,24 @@ const FAVORITE_COLOR_LIMIT = 12;
 const FAVORITE_STYLE_LIMIT = 8;
 const FAVORITE_COLORS_STORAGE_KEY = "planner-favorite-colors-v1";
 const FAVORITE_STYLES_STORAGE_KEY = "planner-favorite-styles-v1";
+const DEFAULT_COLOR_PALETTE = [
+  "#2f2b2a",
+  "#1f3a64",
+  "#0f6f67",
+  "#0f8f43",
+  "#a05f13",
+  "#8d2525",
+  "#7f3c9a",
+  "#5f5f63",
+];
+const SIZE_PRESETS = [1.1, 2.1, 3.1, 4.2];
 
-type InkTool = "pen" | "pencil" | "highlighter";
+type DrawingTool = "pen" | "pencil" | "highlighter";
+type InkTool = DrawingTool | "eraser";
 
 interface FavoriteStyle {
   id: string;
-  tool: InkTool;
+  tool: DrawingTool;
   color: string;
   size: number;
 }
@@ -30,6 +42,7 @@ const TOOL_LABELS: Record<InkTool, string> = {
   pen: "Pen",
   pencil: "Pencil",
   highlighter: "Highlighter",
+  eraser: "Eraser",
 };
 
 const SYMBOL_OPTIONS: SymbolOption[] = [
@@ -47,7 +60,6 @@ function readStorage<T>(key: string, fallback: T): T {
     if (!raw) {
       return fallback;
     }
-
     return JSON.parse(raw) as T;
   } catch {
     return fallback;
@@ -97,7 +109,7 @@ function loadFavoriteStyles(): FavoriteStyle[] {
     return [];
   }
 
-  const validTools = new Set<InkTool>(["pen", "pencil", "highlighter"]);
+  const validTools = new Set<DrawingTool>(["pen", "pencil", "highlighter"]);
   const styles: FavoriteStyle[] = [];
 
   for (const entry of raw) {
@@ -109,7 +121,7 @@ function loadFavoriteStyles(): FavoriteStyle[] {
     if (
       typeof candidate.id !== "string" ||
       typeof candidate.tool !== "string" ||
-      !validTools.has(candidate.tool as InkTool) ||
+      !validTools.has(candidate.tool as DrawingTool) ||
       typeof candidate.color !== "string" ||
       !isHexColor(candidate.color) ||
       typeof candidate.size !== "number"
@@ -119,7 +131,7 @@ function loadFavoriteStyles(): FavoriteStyle[] {
 
     styles.push({
       id: candidate.id,
-      tool: candidate.tool as InkTool,
+      tool: candidate.tool as DrawingTool,
       color: candidate.color.toLowerCase(),
       size: clampStrokeSize(candidate.size),
     });
@@ -132,7 +144,7 @@ function loadFavoriteStyles(): FavoriteStyle[] {
   return styles;
 }
 
-function makeFavoriteStyle(tool: InkTool, color: string, size: number): FavoriteStyle {
+function makeFavoriteStyle(tool: DrawingTool, color: string, size: number): FavoriteStyle {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     tool,
@@ -144,7 +156,7 @@ function makeFavoriteStyle(tool: InkTool, color: string, size: number): Favorite
 export default function App() {
   const [month, setMonth] = useState<number>(DEFAULT_MONTH);
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX);
-  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(false);
+  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(true);
   const [activeTool, setActiveTool] = useState<InkTool>("pen");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
@@ -153,6 +165,13 @@ export default function App() {
   const [favoriteStyles, setFavoriteStyles] = useState<FavoriteStyle[]>(loadFavoriteStyles);
 
   const effectiveInk = useMemo(() => {
+    if (activeTool === "eraser") {
+      return {
+        lineWidth: clampStrokeSize(strokeSize),
+        opacity: 1,
+      };
+    }
+
     if (activeTool === "highlighter") {
       return {
         lineWidth: clampStrokeSize(strokeSize) * 2.3,
@@ -172,6 +191,20 @@ export default function App() {
       opacity: 1,
     };
   }, [activeTool, strokeSize]);
+
+  const eraseRadius = useMemo(() => {
+    return Math.max(10, clampStrokeSize(strokeSize) * 6);
+  }, [strokeSize]);
+
+  const visibleColorSwatches = useMemo(() => {
+    const merged = [...favoriteColors];
+    for (const color of DEFAULT_COLOR_PALETTE) {
+      if (!merged.includes(color)) {
+        merged.push(color);
+      }
+    }
+    return merged.slice(0, FAVORITE_COLOR_LIMIT);
+  }, [favoriteColors]);
 
   useEffect(() => {
     try {
@@ -213,6 +246,10 @@ export default function App() {
   };
 
   const saveCurrentStyle = () => {
+    if (activeTool === "eraser") {
+      return;
+    }
+
     const normalizedColor = activeColor.toLowerCase();
     const normalizedSize = clampStrokeSize(strokeSize);
 
@@ -244,6 +281,137 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      <header className="top-ink-toolbar" aria-label="Writing tools">
+        <div className="top-toolbar-row">
+          <div className="top-toolbar-group">
+            {(["pen", "pencil", "highlighter", "eraser"] as InkTool[]).map((tool) => (
+              <button
+                key={tool}
+                type="button"
+                className={tool === activeTool ? "toolbar-button active" : "toolbar-button"}
+                onClick={() => {
+                  setActiveTool(tool);
+                  if (tool === "eraser") {
+                    setActiveSymbol("");
+                  }
+                }}
+                title={TOOL_LABELS[tool]}
+              >
+                {TOOL_LABELS[tool]}
+              </button>
+            ))}
+          </div>
+
+          <div className="top-toolbar-group">
+            {SIZE_PRESETS.map((sizePreset) => (
+              <button
+                key={`size-${sizePreset}`}
+                type="button"
+                className={
+                  Math.abs(clampStrokeSize(strokeSize) - sizePreset) < 0.06
+                    ? "toolbar-button active"
+                    : "toolbar-button"
+                }
+                onClick={() => {
+                  setStrokeSize(sizePreset);
+                }}
+                title={`Stroke ${sizePreset.toFixed(1)}`}
+              >
+                {sizePreset.toFixed(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="top-toolbar-group styles-chip-row">
+            {favoriteStyles.slice(0, 4).map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className="style-chip-button"
+                onClick={() => applyStyle(preset)}
+                title={`${TOOL_LABELS[preset.tool]} ${preset.size.toFixed(1)}`}
+              >
+                <span className="style-chip-color" style={{ backgroundColor: preset.color }} />
+                <span>{preset.size.toFixed(1)}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={saveCurrentStyle}
+              disabled={activeTool === "eraser"}
+              title="Save current writing style"
+            >
+              Save Style
+            </button>
+          </div>
+
+          <label className="top-toolbar-toggle">
+            <input
+              type="checkbox"
+              checked={allowTouchInk}
+              onChange={(event) => {
+                setAllowTouchInk(event.target.checked);
+              }}
+            />
+            Touch
+          </label>
+        </div>
+
+        <div className="top-toolbar-row">
+          <div className="top-toolbar-group color-swatch-row" aria-label="Color swatches">
+            {visibleColorSwatches.map((savedColor) => (
+              <button
+                key={savedColor}
+                type="button"
+                className={savedColor === activeColor ? "swatch-button active" : "swatch-button"}
+                style={{ backgroundColor: savedColor }}
+                onClick={() => {
+                  setActiveColor(savedColor);
+                }}
+                aria-label={`Use color ${savedColor}`}
+              />
+            ))}
+          </div>
+
+          <input
+            className="top-color-picker"
+            type="color"
+            value={activeColor}
+            onChange={(event) => {
+              setActiveColor(event.target.value.toLowerCase());
+            }}
+            aria-label="Current color"
+          />
+
+          <button type="button" className="toolbar-button" onClick={saveCurrentColor}>
+            Save Color
+          </button>
+
+          <div className="top-toolbar-group symbols-chip-row">
+            {SYMBOL_OPTIONS.map((option) => {
+              const isActive = option.value === activeSymbol;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={isActive ? "toolbar-button active symbol-button" : "toolbar-button symbol-button"}
+                  onClick={() => {
+                    if (activeTool !== "eraser") {
+                      setActiveSymbol(option.value);
+                    }
+                  }}
+                  title={option.label}
+                  disabled={activeTool === "eraser"}
+                >
+                  {option.value || option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </header>
+
       <div className="app-layout">
         <div className="planner-stage">
           <MonthlyView
@@ -254,163 +422,13 @@ export default function App() {
             inkColor={activeColor}
             inkLineWidth={effectiveInk.lineWidth}
             inkOpacity={effectiveInk.opacity}
-            inkSymbol={activeSymbol || null}
+            inkSymbol={activeTool === "eraser" ? null : activeSymbol || null}
+            inkMode={activeTool === "eraser" ? "erase" : "draw"}
+            inkEraseRadius={eraseRadius}
             onMonthChange={handleMonthTabChange}
             onWeekIndexChange={handleWeekTabChange}
           />
         </div>
-
-        <aside className="ink-toolbar" aria-label="Writing tools">
-          <h2>Writing Tools</h2>
-          <p className="ink-toolbar-subtitle">
-            {activeSymbol ? `Symbol mode: ${activeSymbol}` : `${TOOL_LABELS[activeTool]} mode`}
-          </p>
-
-          <section className="toolbar-section">
-            <h3>Tool</h3>
-            <div className="tool-button-row">
-              {(["pen", "pencil", "highlighter"] as InkTool[]).map((tool) => (
-                <button
-                  key={tool}
-                  type="button"
-                  className={tool === activeTool ? "toolbar-button active" : "toolbar-button"}
-                  onClick={() => {
-                    setActiveTool(tool);
-                    setActiveSymbol("");
-                  }}
-                >
-                  {TOOL_LABELS[tool]}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="toolbar-section">
-            <h3>Color</h3>
-            <label className="toolbar-field-label" htmlFor="ink-color-picker">
-              Current color
-            </label>
-            <div className="color-picker-row">
-              <input
-                id="ink-color-picker"
-                type="color"
-                value={activeColor}
-                onChange={(event) => {
-                  setActiveColor(event.target.value.toLowerCase());
-                }}
-              />
-              <span>{activeColor.toUpperCase()}</span>
-            </div>
-            <div className="toolbar-action-row">
-              <button type="button" className="toolbar-button" onClick={saveCurrentColor}>
-                Save Color
-              </button>
-            </div>
-            <div className="swatch-grid" aria-label="Favorite colors">
-              {favoriteColors.length ? (
-                favoriteColors.map((savedColor) => (
-                  <button
-                    key={savedColor}
-                    type="button"
-                    className={savedColor === activeColor ? "swatch-button active" : "swatch-button"}
-                    style={{ backgroundColor: savedColor }}
-                    onClick={() => {
-                      setActiveColor(savedColor);
-                      setActiveSymbol("");
-                    }}
-                    aria-label={`Use color ${savedColor}`}
-                    title={savedColor.toUpperCase()}
-                  />
-                ))
-              ) : (
-                <span className="toolbar-empty">No saved colors yet.</span>
-              )}
-            </div>
-          </section>
-
-          <section className="toolbar-section">
-            <h3>Stroke</h3>
-            <label className="toolbar-field-label" htmlFor="ink-size-slider">
-              Base size: {clampStrokeSize(strokeSize).toFixed(1)}
-            </label>
-            <input
-              id="ink-size-slider"
-              type="range"
-              min={0.8}
-              max={4.8}
-              step={0.1}
-              value={strokeSize}
-              onChange={(event) => {
-                setStrokeSize(clampStrokeSize(Number.parseFloat(event.target.value)));
-              }}
-            />
-            <div className="toolbar-field-label toolbar-effect-label">
-              Effective line: {effectiveInk.lineWidth.toFixed(1)} | Opacity{" "}
-              {(effectiveInk.opacity * 100).toFixed(0)}%
-            </div>
-          </section>
-
-          <section className="toolbar-section">
-            <h3>Favorite Styles</h3>
-            <div className="toolbar-action-row">
-              <button type="button" className="toolbar-button" onClick={saveCurrentStyle}>
-                Save Style
-              </button>
-            </div>
-            <div className="style-list">
-              {favoriteStyles.length ? (
-                favoriteStyles.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className="style-preset-button"
-                    onClick={() => applyStyle(preset)}
-                  >
-                    <span className="style-preset-tool">{TOOL_LABELS[preset.tool]}</span>
-                    <span className="style-preset-color" style={{ backgroundColor: preset.color }} />
-                    <span className="style-preset-size">{preset.size.toFixed(1)}</span>
-                  </button>
-                ))
-              ) : (
-                <span className="toolbar-empty">No saved styles yet.</span>
-              )}
-            </div>
-          </section>
-
-          <section className="toolbar-section">
-            <h3>Symbols</h3>
-            <div className="tool-button-row symbol-button-row">
-              {SYMBOL_OPTIONS.map((option) => {
-                const isActive = option.value === activeSymbol;
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    className={isActive ? "toolbar-button active" : "toolbar-button"}
-                    onClick={() => {
-                      setActiveSymbol(option.value);
-                    }}
-                    title={option.label}
-                  >
-                    {option.value || option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <span className="toolbar-empty">Tap the planner to place the selected symbol.</span>
-          </section>
-
-          <label className="toolbar-toggle">
-            <input
-              type="checkbox"
-              checked={allowTouchInk}
-              onChange={(event) => {
-                setAllowTouchInk(event.target.checked);
-              }}
-            />
-            Allow finger drawing
-          </label>
-        </aside>
       </div>
     </main>
   );

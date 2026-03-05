@@ -11,6 +11,8 @@ interface InkLayerProps {
   opacity?: number;
   symbol?: string | null;
   lockToCells?: boolean;
+  mode?: "draw" | "erase";
+  eraseRadius?: number;
 }
 
 interface InkPoint {
@@ -168,6 +170,18 @@ function drawWithClip(
   ctx.restore();
 }
 
+function isPointInsideRadius(
+  x: number,
+  y: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+): boolean {
+  const deltaX = x - centerX;
+  const deltaY = y - centerY;
+  return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+}
+
 export default function InkLayer({
   pageId,
   allowTouch = false,
@@ -177,11 +191,14 @@ export default function InkLayer({
   opacity = 1,
   symbol = null,
   lockToCells = false,
+  mode = "draw",
+  eraseRadius = 14,
 }: InkLayerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<InkStroke[]>([]);
   const symbolsRef = useRef<InkSymbol[]>([]);
   const activeStrokeRef = useRef<ActiveStroke | null>(null);
+  const activeEraserPointerIdRef = useRef<number | null>(null);
   const dprRef = useRef(1);
 
   useEffect(() => {
@@ -305,7 +322,36 @@ export default function InkLayer({
     };
 
     const canDrawWithInput = (inputType: InkInputType) => {
-      return inputType === "pen" || inputType === "mouse" || (allowTouch && inputType === "touch");
+      return (
+        inputType === "pen" ||
+        inputType === "mouse" ||
+        inputType === "unknown" ||
+        (allowTouch && inputType === "touch")
+      );
+    };
+
+    const eraseAtPoint = (point: InkPoint) => {
+      const radius = Math.max(6, eraseRadius);
+
+      const nextStrokes = strokesRef.current.filter((stroke) => {
+        return !stroke.points.some((strokePoint) => (
+          isPointInsideRadius(strokePoint.x, strokePoint.y, point.x, point.y, radius)
+        ));
+      });
+
+      const nextSymbols = symbolsRef.current.filter((currentSymbol) => (
+        !isPointInsideRadius(currentSymbol.x, currentSymbol.y, point.x, point.y, radius)
+      ));
+
+      if (
+        nextStrokes.length !== strokesRef.current.length ||
+        nextSymbols.length !== symbolsRef.current.length
+      ) {
+        strokesRef.current = nextStrokes;
+        symbolsRef.current = nextSymbols;
+        persistInk();
+        redraw();
+      }
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -326,6 +372,14 @@ export default function InkLayer({
       onInputType?.(inputType);
       const rect = canvas.getBoundingClientRect();
       const point = getRelativePoint(event, rect);
+
+      if (mode === "erase") {
+        activeEraserPointerIdRef.current = event.pointerId;
+        eraseAtPoint(point);
+        event.preventDefault();
+        surface.setPointerCapture(event.pointerId);
+        return;
+      }
 
       if (symbol) {
         const nextSymbol: InkSymbol = {
@@ -360,6 +414,14 @@ export default function InkLayer({
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (activeEraserPointerIdRef.current === event.pointerId) {
+        const rect = canvas.getBoundingClientRect();
+        const point = getRelativePoint(event, rect);
+        eraseAtPoint(point);
+        event.preventDefault();
+        return;
+      }
+
       const activeStroke = activeStrokeRef.current;
       if (!activeStroke || activeStroke.pointerId !== event.pointerId) {
         return;
@@ -372,6 +434,14 @@ export default function InkLayer({
     };
 
     const finalizeStroke = (event: PointerEvent) => {
+      if (activeEraserPointerIdRef.current === event.pointerId) {
+        activeEraserPointerIdRef.current = null;
+        if (surface.hasPointerCapture(event.pointerId)) {
+          surface.releasePointerCapture(event.pointerId);
+        }
+        return;
+      }
+
       const activeStroke = activeStrokeRef.current;
       if (!activeStroke || activeStroke.pointerId !== event.pointerId) {
         return;
@@ -393,6 +463,7 @@ export default function InkLayer({
     strokesRef.current = [];
     symbolsRef.current = [];
     activeStrokeRef.current = null;
+    activeEraserPointerIdRef.current = null;
 
     try {
       const raw = localStorage.getItem(storageKey(pageId));
@@ -424,7 +495,7 @@ export default function InkLayer({
       surface.removeEventListener("pointercancel", finalizeStroke);
       window.removeEventListener("resize", resizeCanvas);
     };
-  }, [allowTouch, color, lineWidth, lockToCells, onInputType, opacity, pageId, symbol]);
+  }, [allowTouch, color, eraseRadius, lineWidth, lockToCells, mode, onInputType, opacity, pageId, symbol]);
 
   return <canvas ref={canvasRef} className="ink-layer-canvas" aria-hidden="true" />;
 }

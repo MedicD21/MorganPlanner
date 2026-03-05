@@ -15,14 +15,17 @@
   --shell-pad-x: clamp(0.5rem, 1.6vw, 1.25rem);
   --shell-pad-y: clamp(0.5rem, 2vw, 1.25rem);
   --layout-gap: clamp(0.5rem, 1vw, 1rem);
-  --tool-panel-width: clamp(180px, 19vw, 250px);
+  --toolbar-reserve: clamp(96px, 18vh, 172px);
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   padding: var(--shell-pad-y) var(--shell-pad-x);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.45rem;
   overflow: hidden;
-  touch-action: pinch-zoom;
+  touch-action: none;
   color: var(--ink);
 }
 
@@ -31,9 +34,118 @@
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--tool-panel-width);
-  gap: var(--layout-gap);
+  grid-template-columns: 1fr;
+  min-height: 0;
   align-items: stretch;
+}
+
+.top-ink-toolbar {
+  border: 1px solid rgba(60, 41, 46, 0.35);
+  background: rgba(251, 246, 240, 0.94);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(18, 10, 13, 0.18);
+  padding: 0.38rem 0.45rem;
+  display: grid;
+  gap: 0.3rem;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+.top-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.top-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.styles-chip-row {
+  margin-left: auto;
+}
+
+.color-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+}
+
+.color-swatch-row .swatch-button {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+}
+
+.style-chip-button {
+  border: 1px solid #b7ab9f;
+  border-radius: 999px;
+  background: #f5f0ea;
+  color: #2d2928;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.62rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  cursor: pointer;
+}
+
+.style-chip-button:focus-visible {
+  outline: 2px solid #6f625d;
+  outline-offset: 1px;
+}
+
+.style-chip-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+}
+
+.top-color-picker {
+  width: 34px;
+  height: 24px;
+  border: 1px solid #b7aca2;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.symbols-chip-row {
+  margin-left: auto;
+}
+
+.symbol-button {
+  min-width: 2rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
+  font-weight: 700;
+}
+
+.top-toolbar-toggle {
+  margin-left: auto;
+  border: 1px solid #c2b9ad;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #f8f4ee;
+  touch-action: manipulation;
+}
+
+.top-toolbar-toggle input {
+  margin: 0;
 }
 
 .planner-stage {
@@ -42,7 +154,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  touch-action: pinch-zoom;
+  touch-action: none;
 }
 
 .ink-toolbar {
@@ -265,18 +377,18 @@
   position: relative;
   width: min(
     1280px,
-    calc(100vw - (var(--shell-pad-x) * 2) - var(--tool-panel-width) - var(--layout-gap)),
-    calc((100dvh - (var(--shell-pad-y) * 2)) * (4 / 3))
+    calc(100vw - (var(--shell-pad-x) * 2)),
+    calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * (4 / 3))
   );
   height: min(
-    calc(100dvh - (var(--shell-pad-y) * 2)),
-    calc((100vw - (var(--shell-pad-x) * 2) - var(--tool-panel-width) - var(--layout-gap)) * (3 / 4))
+    calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
+    calc((100vw - (var(--shell-pad-x) * 2)) * (3 / 4))
   );
   max-width: 100%;
   max-height: 100%;
   margin: 0;
   overflow: hidden;
-  touch-action: pinch-zoom;
+  touch-action: none;
 }
 
 .planner-spread {
@@ -290,7 +402,7 @@
   border: 1px solid #25181c;
   box-shadow: var(--shadow);
   padding: 0.45rem;
-  touch-action: pinch-zoom;
+  touch-action: none;
 }
 
 .planner-previews > .planner-spread {
@@ -313,7 +425,7 @@
   background: var(--paper);
   position: relative;
   overflow: hidden;
-  touch-action: pinch-zoom;
+  touch-action: none;
 }
 
 .ink-layer-canvas {
@@ -802,40 +914,39 @@
 
 @media screen and (max-width: 1200px) {
   .app-shell {
-    --tool-panel-width: clamp(170px, 24vw, 220px);
+    --toolbar-reserve: clamp(108px, 20vh, 192px);
   }
 }
 
 @media screen and (max-width: 980px) {
-  .app-layout {
-    grid-template-columns: 1fr;
+  .top-toolbar-toggle,
+  .styles-chip-row,
+  .symbols-chip-row {
+    margin-left: 0;
   }
 
-  .ink-toolbar {
-    position: absolute;
-    top: calc(var(--shell-pad-y) + 0.2rem);
-    right: calc(var(--shell-pad-x) + 0.2rem);
-    width: min(200px, 42vw);
-    max-height: min(64dvh, 560px);
-    z-index: 20;
+  .top-ink-toolbar {
+    padding: 0.34rem;
+    gap: 0.25rem;
   }
 
   .planner-previews {
+    max-width: min(1120px, 100%);
     width: min(
       1120px,
       calc(100vw - (var(--shell-pad-x) * 2)),
-      calc((100dvh - (var(--shell-pad-y) * 2)) * (4 / 3))
+      calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * (4 / 3))
     );
     height: min(
-      calc(100dvh - (var(--shell-pad-y) * 2)),
+      calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
       calc((100vw - (var(--shell-pad-x) * 2)) * (3 / 4))
     );
   }
 }
 
 @media screen and (max-width: 740px) {
-  .ink-toolbar {
-    width: min(185px, 56vw);
+  .top-toolbar-row {
+    gap: 0.24rem;
   }
 
   .month-tabs {
