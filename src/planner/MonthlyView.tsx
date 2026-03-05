@@ -22,10 +22,11 @@ interface MonthlyViewProps {
   inkLineWidth?: number;
   inkOpacity?: number;
   inkSymbol?: string | null;
-  inkMode?: "draw" | "erase" | "shape" | "lasso" | "image";
+  inkMode?: "draw" | "erase" | "shape" | "lasso" | "image" | "sticky";
   inkShapeKind?: "line" | "rectangle" | "ellipse";
   inkImageSrc?: string | null;
   inkEraseRadius?: number;
+  inkStickyTemplate?: string;
   onInkInputType?: (inputType: InkInputType) => void;
   onPenDoubleTap?: () => void;
   onMonthChange?: (month: number) => void;
@@ -257,6 +258,7 @@ export default function MonthlyView({
   inkShapeKind = "line",
   inkImageSrc = null,
   inkEraseRadius = 14,
+  inkStickyTemplate = "new note",
   onInkInputType,
   onPenDoubleTap,
   onMonthChange,
@@ -521,6 +523,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />
@@ -576,6 +579,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />
@@ -619,6 +623,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />
@@ -654,6 +659,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />
@@ -690,6 +696,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />
@@ -721,6 +728,7 @@ export default function MonthlyView({
               shapeKind={inkShapeKind}
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
+              stickyTemplate={inkStickyTemplate}
               onInputType={onInkInputType}
               onPenDoubleTap={onPenDoubleTap}
             />

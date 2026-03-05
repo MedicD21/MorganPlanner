@@ -373,11 +373,13 @@ export default function App() {
     activeTool !== "lasso" &&
     activeTool !== "elements" &&
     activeTool !== "text" &&
-    activeTool !== "image";
+    activeTool !== "image" &&
+    activeTool !== "sticky";
   const isPaletteEnabled =
     activeTool !== "eraser" &&
     activeTool !== "lasso" &&
-    activeTool !== "image";
+    activeTool !== "image" &&
+    activeTool !== "sticky";
   const showShapeControls = activeTool === "shape";
   const showElementControls = activeTool === "elements";
   const showTextControls = activeTool === "text";

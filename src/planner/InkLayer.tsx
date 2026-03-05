@@ -1,8 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type InkInputType = "pen" | "touch" | "mouse" | "unknown";
 export type InkShapeKind = "line" | "rectangle" | "ellipse";
-export type InkLayerMode = "draw" | "erase" | "shape" | "lasso" | "image";
+export type InkLayerMode =
+  | "draw"
+  | "erase"
+  | "shape"
+  | "lasso"
+  | "image"
+  | "sticky";
 
 interface InkLayerProps {
   pageId: string;
@@ -18,6 +24,7 @@ interface InkLayerProps {
   shapeKind?: InkShapeKind;
   imageSrc?: string | null;
   eraseRadius?: number;
+  stickyTemplate?: string;
 }
 
 interface InkPoint {
@@ -61,10 +68,21 @@ interface InkImage {
   clipRect?: InkClipRect | null;
 }
 
+interface InkSticky {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  collapsed: boolean;
+}
+
 interface InkDocument {
   strokes: InkStroke[];
   symbols: InkSymbol[];
   images: InkImage[];
+  stickies: InkSticky[];
 }
 
 interface ActiveStroke {
@@ -92,6 +110,13 @@ interface ActiveLasso {
   current: InkPoint;
 }
 
+interface ActiveStickyDrag {
+  id: string;
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 interface LassoSelection {
   strokeIndexes: number[];
   symbolIndexes: number[];
@@ -107,10 +132,14 @@ interface PointerLikeEvent {
   pressure: number;
   target: EventTarget | null;
   preventDefault: () => void;
+  stopPropagation: () => void;
 }
 
 const STORAGE_PREFIX = "planner-ink-v1";
 const CELL_SELECTOR = "[data-ink-cell]";
+const DEFAULT_STICKY_WIDTH = 180;
+const DEFAULT_STICKY_HEIGHT = 134;
+const COLLAPSED_STICKY_SIZE = 30;
 
 function normalizeInputType(pointerType: string): InkInputType {
   if (pointerType === "pen" || pointerType === "touch" || pointerType === "mouse") {
@@ -191,11 +220,12 @@ function parseStoredInk(raw: string): InkDocument {
       strokes: parsed as InkStroke[],
       symbols: [],
       images: [],
+      stickies: [],
     };
   }
 
   if (!parsed || typeof parsed !== "object") {
-    return { strokes: [], symbols: [], images: [] };
+    return { strokes: [], symbols: [], images: [], stickies: [] };
   }
 
   const maybeDocument = parsed as Partial<InkDocument>;
@@ -203,6 +233,23 @@ function parseStoredInk(raw: string): InkDocument {
     strokes: Array.isArray(maybeDocument.strokes) ? maybeDocument.strokes : [],
     symbols: Array.isArray(maybeDocument.symbols) ? maybeDocument.symbols : [],
     images: Array.isArray(maybeDocument.images) ? maybeDocument.images : [],
+    stickies: Array.isArray(maybeDocument.stickies)
+      ? maybeDocument.stickies
+      : [],
+  };
+}
+
+function clampStickyToCanvas(
+  sticky: InkSticky,
+  canvasWidth: number,
+  canvasHeight: number,
+): InkSticky {
+  const maxX = Math.max(0, canvasWidth - sticky.width);
+  const maxY = Math.max(0, canvasHeight - sticky.height);
+  return {
+    ...sticky,
+    x: Math.min(Math.max(0, sticky.x), maxX),
+    y: Math.min(Math.max(0, sticky.y), maxY),
   };
 }
 
@@ -507,11 +554,14 @@ export default function InkLayer({
   shapeKind = "line",
   imageSrc = null,
   eraseRadius = 14,
+  stickyTemplate = "new note",
 }: InkLayerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<InkStroke[]>([]);
   const symbolsRef = useRef<InkSymbol[]>([]);
   const imagesRef = useRef<InkImage[]>([]);
+  const stickiesRef = useRef<InkSticky[]>([]);
+  const [stickyNotes, setStickyNotes] = useState<InkSticky[]>([]);
   const activeStrokeRef = useRef<ActiveStroke | null>(null);
   const activeEraserPointerIdRef = useRef<number | null>(null);
   const activeShapeRef = useRef<ActiveShape | null>(null);
@@ -519,6 +569,7 @@ export default function InkLayer({
   const activeLassoDragRef = useRef<{ pointerId: number; lastPoint: InkPoint } | null>(
     null,
   );
+  const activeStickyDragRef = useRef<ActiveStickyDrag | null>(null);
   const lassoSelectionRef = useRef<LassoSelection | null>(null);
   const dprRef = useRef(1);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -528,12 +579,36 @@ export default function InkLayer({
   const lastPenTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastPenTapArtifactRef = useRef<{ index: number; time: number } | null>(null);
 
+  const persistInk = useCallback(() => {
+    try {
+      const payload: InkDocument = {
+        strokes: strokesRef.current,
+        symbols: symbolsRef.current,
+        images: imagesRef.current,
+        stickies: stickiesRef.current,
+      };
+      localStorage.setItem(storageKey(pageId), JSON.stringify(payload));
+    } catch {
+      // Ignore storage failures (private mode / quota).
+    }
+  }, [pageId]);
+
+  const updateStickyCollection = useCallback(
+    (nextStickies: InkSticky[]) => {
+      stickiesRef.current = nextStickies;
+      setStickyNotes(nextStickies);
+      persistInk();
+    },
+    [persistInk],
+  );
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const surface = canvas?.parentElement;
     if (!canvas || !surface) {
       return;
     }
+    let canceled = false;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -700,19 +775,6 @@ export default function InkLayer({
       }
     };
 
-    const persistInk = () => {
-      try {
-        const payload: InkDocument = {
-          strokes: strokesRef.current,
-          symbols: symbolsRef.current,
-          images: imagesRef.current,
-        };
-        localStorage.setItem(storageKey(pageId), JSON.stringify(payload));
-      } catch {
-        // Ignore storage failures (private mode / quota).
-      }
-    };
-
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -783,14 +845,26 @@ export default function InkLayer({
         );
       });
 
+      const nextStickies = stickiesRef.current.filter((sticky) => {
+        return !(
+          point.x >= sticky.x - radius &&
+          point.x <= sticky.x + sticky.width + radius &&
+          point.y >= sticky.y - radius &&
+          point.y <= sticky.y + sticky.height + radius
+        );
+      });
+
       if (
         nextStrokes.length !== strokesRef.current.length ||
         nextSymbols.length !== symbolsRef.current.length ||
-        nextImages.length !== imagesRef.current.length
+        nextImages.length !== imagesRef.current.length ||
+        nextStickies.length !== stickiesRef.current.length
       ) {
         strokesRef.current = nextStrokes;
         symbolsRef.current = nextSymbols;
         imagesRef.current = nextImages;
+        stickiesRef.current = nextStickies;
+        setStickyNotes(nextStickies);
         persistInk();
         redraw();
       }
@@ -960,7 +1034,9 @@ export default function InkLayer({
 
       if (
         event.target instanceof HTMLElement &&
-        event.target.closest("a, button, input, select, label")
+        event.target.closest(
+          "a, button, input, select, label, textarea, [data-sticky-note]",
+        )
       ) {
         return;
       }
@@ -989,6 +1065,7 @@ export default function InkLayer({
         activeEraserPointerIdRef.current = event.pointerId;
         eraseAtPoint(point);
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1001,6 +1078,7 @@ export default function InkLayer({
         };
         lassoSelectionRef.current = null;
         event.preventDefault();
+        event.stopPropagation();
         redraw();
         return;
       }
@@ -1013,6 +1091,7 @@ export default function InkLayer({
             lastPoint: point,
           };
           event.preventDefault();
+          event.stopPropagation();
           return;
         }
 
@@ -1023,7 +1102,32 @@ export default function InkLayer({
           current: point,
         };
         event.preventDefault();
+        event.stopPropagation();
         redraw();
+        return;
+      }
+
+      if (mode === "sticky") {
+        const unclampedSticky: InkSticky = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          x: point.x - DEFAULT_STICKY_WIDTH / 2,
+          y: point.y - 20,
+          width: DEFAULT_STICKY_WIDTH,
+          height: DEFAULT_STICKY_HEIGHT,
+          text: stickyTemplate.trim() || "new note",
+          collapsed: false,
+        };
+        const nextSticky = clampStickyToCanvas(
+          unclampedSticky,
+          rect.width,
+          rect.height,
+        );
+        const nextStickies = [...stickiesRef.current, nextSticky];
+        stickiesRef.current = nextStickies;
+        setStickyNotes(nextStickies);
+        persistInk();
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1054,6 +1158,7 @@ export default function InkLayer({
         persistInk();
         redraw();
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1071,6 +1176,7 @@ export default function InkLayer({
         persistInk();
         redraw();
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1087,6 +1193,7 @@ export default function InkLayer({
 
       lassoSelectionRef.current = null;
       event.preventDefault();
+      event.stopPropagation();
     };
 
     const onMove = (event: PointerLikeEvent) => {
@@ -1096,6 +1203,7 @@ export default function InkLayer({
         updatePenTapMovement(event.pointerId, point);
         eraseAtPoint(point);
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1106,6 +1214,7 @@ export default function InkLayer({
         updatePenTapMovement(event.pointerId, activeShape.current);
         redraw();
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1129,6 +1238,7 @@ export default function InkLayer({
         activeLassoDrag.lastPoint = currentPoint;
         redraw();
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1139,6 +1249,7 @@ export default function InkLayer({
         updatePenTapMovement(event.pointerId, activeLasso.current);
         redraw();
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1153,6 +1264,7 @@ export default function InkLayer({
       activeStroke.stroke.points.push(latestPoint);
       drawStrokeSegment(activeStroke.stroke);
       event.preventDefault();
+      event.stopPropagation();
     };
 
     const onEnd = (event: PointerLikeEvent) => {
@@ -1163,6 +1275,7 @@ export default function InkLayer({
 
       if (activeEraserPointerIdRef.current === event.pointerId) {
         activeEraserPointerIdRef.current = null;
+        event.stopPropagation();
         return;
       }
 
@@ -1182,6 +1295,7 @@ export default function InkLayer({
         activeShapeRef.current = null;
         persistInk();
         redraw();
+        event.stopPropagation();
         return;
       }
 
@@ -1190,6 +1304,7 @@ export default function InkLayer({
         activeLassoDragRef.current = null;
         persistInk();
         redraw();
+        event.stopPropagation();
         return;
       }
 
@@ -1201,11 +1316,13 @@ export default function InkLayer({
         if (lassoRect.width < 6 || lassoRect.height < 6) {
           lassoSelectionRef.current = null;
           redraw();
+          event.stopPropagation();
           return;
         }
 
         lassoSelectionRef.current = computeLassoSelection(lassoRect);
         redraw();
+        event.stopPropagation();
         return;
       }
 
@@ -1246,6 +1363,7 @@ export default function InkLayer({
 
       activeStrokeRef.current = null;
       redraw();
+      event.stopPropagation();
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -1258,6 +1376,9 @@ export default function InkLayer({
         target: event.target,
         preventDefault: () => {
           event.preventDefault();
+        },
+        stopPropagation: () => {
+          event.stopPropagation();
         },
       };
 
@@ -1285,6 +1406,9 @@ export default function InkLayer({
         preventDefault: () => {
           event.preventDefault();
         },
+        stopPropagation: () => {
+          event.stopPropagation();
+        },
       };
       onMove(pointerEvent);
     };
@@ -1299,6 +1423,9 @@ export default function InkLayer({
         target: event.target,
         preventDefault: () => {
           event.preventDefault();
+        },
+        stopPropagation: () => {
+          event.stopPropagation();
         },
       };
 
@@ -1328,6 +1455,9 @@ export default function InkLayer({
           preventDefault: () => {
             event.preventDefault();
           },
+          stopPropagation: () => {
+            event.stopPropagation();
+          },
         };
         onStart(pointerEvent);
       }
@@ -1349,6 +1479,9 @@ export default function InkLayer({
           target: event.target,
           preventDefault: () => {
             event.preventDefault();
+          },
+          stopPropagation: () => {
+            event.stopPropagation();
           },
         };
         onMove(pointerEvent);
@@ -1373,6 +1506,9 @@ export default function InkLayer({
           preventDefault: () => {
             event.preventDefault();
           },
+          stopPropagation: () => {
+            event.stopPropagation();
+          },
         };
         onEnd(pointerEvent);
       }
@@ -1381,11 +1517,13 @@ export default function InkLayer({
     strokesRef.current = [];
     symbolsRef.current = [];
     imagesRef.current = [];
+    stickiesRef.current = [];
     activeStrokeRef.current = null;
     activeEraserPointerIdRef.current = null;
     activeShapeRef.current = null;
     activeLassoRef.current = null;
     activeLassoDragRef.current = null;
+    activeStickyDragRef.current = null;
     lassoSelectionRef.current = null;
     activePenTapCandidateRef.current = null;
     lastPenTapRef.current = null;
@@ -1398,12 +1536,21 @@ export default function InkLayer({
         strokesRef.current = parsed.strokes;
         symbolsRef.current = parsed.symbols;
         imagesRef.current = parsed.images;
+        stickiesRef.current = parsed.stickies;
       }
     } catch {
       strokesRef.current = [];
       symbolsRef.current = [];
       imagesRef.current = [];
+      stickiesRef.current = [];
     }
+
+    queueMicrotask(() => {
+      if (canceled) {
+        return;
+      }
+      setStickyNotes(stickiesRef.current);
+    });
 
     resizeCanvas();
     const resizeObserver = new ResizeObserver(resizeCanvas);
@@ -1424,6 +1571,7 @@ export default function InkLayer({
     window.addEventListener("resize", resizeCanvas);
 
     return () => {
+      canceled = true;
       resizeObserver.disconnect();
       surface.removeEventListener("pointerdown", onPointerDown);
       surface.removeEventListener("pointermove", onPointerMove);
@@ -1449,9 +1597,244 @@ export default function InkLayer({
     onPenDoubleTap,
     opacity,
     pageId,
+    persistInk,
     shapeKind,
+    stickyTemplate,
     symbol,
   ]);
 
-  return <canvas ref={canvasRef} className="ink-layer-canvas" aria-hidden="true" />;
+  const expandSticky = (id: string) => {
+    const nextStickies = stickiesRef.current.map((sticky) =>
+      sticky.id === id ? { ...sticky, collapsed: false } : sticky,
+    );
+    updateStickyCollection(nextStickies);
+  };
+
+  const collapseSticky = (id: string) => {
+    const nextStickies = stickiesRef.current.map((sticky) =>
+      sticky.id === id ? { ...sticky, collapsed: true } : sticky,
+    );
+    updateStickyCollection(nextStickies);
+  };
+
+  const removeSticky = (id: string) => {
+    const nextStickies = stickiesRef.current.filter((sticky) => sticky.id !== id);
+    updateStickyCollection(nextStickies);
+  };
+
+  const setStickyText = (id: string, text: string) => {
+    const nextStickies = stickiesRef.current.map((sticky) =>
+      sticky.id === id ? { ...sticky, text } : sticky,
+    );
+    updateStickyCollection(nextStickies);
+  };
+
+  const moveSticky = (id: string, x: number, y: number, shouldPersist: boolean) => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const nextStickies = stickiesRef.current.map((sticky) => {
+      if (sticky.id !== id) {
+        return sticky;
+      }
+      return clampStickyToCanvas(
+        {
+          ...sticky,
+          x,
+          y,
+        },
+        rect.width,
+        rect.height,
+      );
+    });
+
+    stickiesRef.current = nextStickies;
+    setStickyNotes(nextStickies);
+    if (shouldPersist) {
+      persistInk();
+    }
+  };
+
+  return (
+    <div className="ink-layer-root">
+      <canvas ref={canvasRef} className="ink-layer-canvas" aria-hidden="true" />
+      <div className="sticky-layer">
+        {stickyNotes.map((sticky) => {
+          if (sticky.collapsed) {
+            const stickyLabel =
+              typeof sticky.text === "string" && sticky.text.trim().length > 0
+                ? sticky.text.trim().slice(0, 1).toUpperCase()
+                : "+";
+            return (
+              <button
+                key={sticky.id}
+                type="button"
+                data-sticky-note
+                className="sticky-note sticky-note-collapsed"
+                style={{
+                  left: `${sticky.x}px`,
+                  top: `${sticky.y}px`,
+                  width: `${COLLAPSED_STICKY_SIZE}px`,
+                  height: `${COLLAPSED_STICKY_SIZE}px`,
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={() => {
+                  expandSticky(sticky.id);
+                }}
+                title="Expand note"
+                aria-label="Expand note"
+              >
+                {stickyLabel}
+              </button>
+            );
+          }
+
+          return (
+            <section
+              key={sticky.id}
+              data-sticky-note
+              className="sticky-note sticky-note-expanded"
+              style={{
+                left: `${sticky.x}px`,
+                top: `${sticky.y}px`,
+                width: `${sticky.width}px`,
+                height: `${sticky.height}px`,
+              }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <div
+                className="sticky-note-header"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  if (
+                    event.target instanceof HTMLElement &&
+                    event.target.closest("button")
+                  ) {
+                    return;
+                  }
+
+                  const canvas = canvasRef.current;
+                  if (!canvas) {
+                    return;
+                  }
+
+                  const rect = canvas.getBoundingClientRect();
+                  activeStickyDragRef.current = {
+                    id: sticky.id,
+                    pointerId: event.pointerId,
+                    offsetX: event.clientX - rect.left - sticky.x,
+                    offsetY: event.clientY - rect.top - sticky.y,
+                  };
+
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  const drag = activeStickyDragRef.current;
+                  if (
+                    !drag ||
+                    drag.id !== sticky.id ||
+                    drag.pointerId !== event.pointerId
+                  ) {
+                    return;
+                  }
+
+                  const canvas = canvasRef.current;
+                  if (!canvas) {
+                    return;
+                  }
+
+                  const rect = canvas.getBoundingClientRect();
+                  const nextX = event.clientX - rect.left - drag.offsetX;
+                  const nextY = event.clientY - rect.top - drag.offsetY;
+                  moveSticky(sticky.id, nextX, nextY, false);
+                  event.stopPropagation();
+                }}
+                onPointerUp={(event) => {
+                  const drag = activeStickyDragRef.current;
+                  if (
+                    !drag ||
+                    drag.id !== sticky.id ||
+                    drag.pointerId !== event.pointerId
+                  ) {
+                    return;
+                  }
+                  activeStickyDragRef.current = null;
+
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+
+                  persistInk();
+                  event.stopPropagation();
+                }}
+                onPointerCancel={(event) => {
+                  const drag = activeStickyDragRef.current;
+                  if (
+                    !drag ||
+                    drag.id !== sticky.id ||
+                    drag.pointerId !== event.pointerId
+                  ) {
+                    return;
+                  }
+                  activeStickyDragRef.current = null;
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  persistInk();
+                  event.stopPropagation();
+                }}
+              >
+                <button
+                  type="button"
+                  className="sticky-note-action"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    collapseSticky(sticky.id);
+                  }}
+                  title="Collapse note"
+                  aria-label="Collapse note"
+                >
+                  _
+                </button>
+                <button
+                  type="button"
+                  className="sticky-note-action"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    removeSticky(sticky.id);
+                  }}
+                  title="Delete note"
+                  aria-label="Delete note"
+                >
+                  x
+                </button>
+              </div>
+              <textarea
+                className="sticky-note-body"
+                value={typeof sticky.text === "string" ? sticky.text : ""}
+                onChange={(event) => {
+                  setStickyText(sticky.id, event.target.value);
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                placeholder="Write here..."
+              />
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
