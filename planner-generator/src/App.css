@@ -17,112 +17,6 @@
   color: var(--ink);
 }
 
-.controls-panel {
-  width: min(1280px, 100%);
-  margin: 0 auto 1.5rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(6px);
-  border-radius: 10px;
-}
-
-.controls-panel h1 {
-  margin: 0;
-  font-size: clamp(1.6rem, 3vw, 2.1rem);
-  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
-  letter-spacing: 0.03em;
-}
-
-.controls-panel p {
-  margin: 0.35rem 0 0.95rem;
-  font-size: 0.94rem;
-}
-
-.controls-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(100px, 220px));
-  gap: 0.8rem;
-  align-items: end;
-}
-
-.controls-row label {
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.controls-row input,
-.controls-row select {
-  border: 1px solid #b7b0a8;
-  background: #fff;
-  color: var(--ink);
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  font-size: 0.95rem;
-  padding: 0.48rem 0.6rem;
-}
-
-.controls-actions {
-  margin-top: 0.85rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  align-items: center;
-}
-
-.controls-actions button {
-  border: 1px solid #786763;
-  background: #2f2827;
-  color: #f8f6f2;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  padding: 0.6rem 0.95rem;
-  cursor: pointer;
-}
-
-.controls-actions button:hover {
-  background: #463b39;
-}
-
-.controls-actions button.secondary-action {
-  background: #efe9e2;
-  color: #372f2c;
-}
-
-.controls-actions button.secondary-action:hover {
-  background: #e2d7cd;
-}
-
-.toggle-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid #b7b0a8;
-  background: #f8f4ef;
-  color: var(--ink);
-  padding: 0.42rem 0.65rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.toggle-control input {
-  width: 1rem;
-  height: 1rem;
-  margin: 0;
-  accent-color: #2f2827;
-}
-
-.ink-status {
-  font-size: 0.82rem;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  letter-spacing: 0.02em;
-}
-
 .planner-previews {
   width: min(1280px, 100%);
   margin: 0 auto;
@@ -635,23 +529,9 @@
   outline-offset: 1px;
 }
 
-.year-export-source {
-  position: absolute;
-  top: -99999px;
-  left: -99999px;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 @media screen and (max-width: 980px) {
   .planner-spread {
     min-height: 620px;
-  }
-
-  .controls-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -660,7 +540,6 @@
     padding: 1.15rem 0.75rem 1.8rem;
   }
 
-  .controls-panel,
   .planner-previews {
     width: min(1180px, 100%);
   }
@@ -694,65 +573,5 @@
 
   .month-tabs {
     display: none;
-  }
-}
-
-@media print {
-  @page {
-    size: 12in 9in;
-    margin: 0.2in;
-  }
-
-  body,
-  body.print-body {
-    margin: 0;
-    padding: 0;
-    background: #fff;
-  }
-
-  .app-shell {
-    padding: 0;
-  }
-
-  .controls-panel {
-    display: none;
-  }
-
-  .planner-previews {
-    width: 11.6in;
-    gap: 0;
-  }
-
-  .planner-spread {
-    width: 11.6in;
-    grid-template-columns: 1.55fr 1fr;
-    box-shadow: none;
-    border: none;
-    background: #fff;
-    padding: 0;
-    min-height: 0;
-    height: 8.6in;
-    aspect-ratio: auto;
-    break-after: page;
-    page-break-after: always;
-  }
-
-  .notes-spread {
-    grid-template-columns: 1fr 1.65fr;
-  }
-
-  .notes-page-spread {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .planner-paper {
-    border: 1px solid #938e88;
-  }
-
-  .week-tab,
-  .month-tab,
-  .spread-link {
-    color: #2d2928 !important;
-    text-decoration: none !important;
   }
 }
