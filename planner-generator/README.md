@@ -1,73 +1,105 @@
-# React + TypeScript + Vite
+# GoodNotes Planner Generator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React + Vite app for generating a printable digital planner layout for GoodNotes.
 
-Currently, two official plugins are available:
+The app builds monthly/weekly spreads, planning pages, and dedicated notes pages, with in-app navigation and export-ready links.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## React Compiler
+- Monthly + weekly spread in one view
+- Planning spread (`to do today`, `this week`, `to do this month`)
+- Dedicated notes spread with ruled left page + dot-grid right page
+- Month tabs and week tabs for navigation
+- Link from month/weekly spread to planning page
+- `NOTES` tab links to notes spread
+- Export current spread or full-year output
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Stack
 
-## Expanding the ESLint configuration
+- React 19
+- TypeScript
+- Vite
+- CSS layout tuned for iPad-friendly 4:3 spreads
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Prerequisites
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- Node.js 18+
+- npm
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Install
+
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Run locally
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Open the local URL shown by Vite.
+
+### Build
+
+```bash
+npm run build
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+## Exporting for GoodNotes
+
+Use Chromium browsers (Chrome/Edge) for best print-to-PDF hyperlink behavior.
+
+1. Open the planner in browser.
+2. Click `Export Current Spread` or `Export Full Year`.
+3. In print dialog choose `Save as PDF`.
+4. Keep scale at 100%, disable headers/footers, keep background graphics on.
+5. Import PDF into GoodNotes.
+
+Tip: in GoodNotes, links are easiest to trigger in read-only mode.
+
+## Deploy to GitHub Pages
+
+This project is configured for `gh-pages` deployment.
+
+```bash
+npm run deploy
+```
+
+That command builds and publishes `dist` to the `gh-pages` branch.
+
+Then in GitHub:
+
+1. Repo `Settings` -> `Pages`
+2. Source: `Deploy from a branch`
+3. Branch: `gh-pages` + folder `/ (root)`
+
+Site URL pattern:
+
+```text
+https://<github-username>.github.io/<repo-name>/
+```
+
+## Scripts
+
+- `npm run dev` - start dev server
+- `npm run build` - type-check + production build
+- `npm run preview` - preview production build locally
+- `npm run lint` - run ESLint
+- `npm run deploy` - publish `dist` to `gh-pages`
+
+## Key Files
+
+- `src/App.tsx` - app controls and year export composition
+- `src/planner/MonthlyView.tsx` - planner page layouts and navigation links
+- `src/planner/generateCalendar.ts` - calendar/week generation logic
+- `src/planner/exportPDF.ts` - browser print export flow
+- `src/App.css` - planner layout + print styles

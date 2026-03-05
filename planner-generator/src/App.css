@@ -126,7 +126,9 @@
 
 .month-paper {
   border-right: 1px solid #bcb3ad;
-  overflow: visible;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
 }
 
 .month-header {
@@ -234,7 +236,8 @@
 .month-calendar {
   display: grid;
   grid-template-rows: auto 1fr;
-  height: calc(100% - 115px);
+  height: 100%;
+  min-height: 0;
 }
 
 .weekday-row {

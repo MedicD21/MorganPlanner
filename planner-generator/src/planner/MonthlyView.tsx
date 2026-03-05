@@ -249,13 +249,6 @@ export default function MonthlyView({
           data-planner-kind="month-week"
         >
           <article className="planner-paper month-paper">
-            <MonthTabs
-              activeMonth={month}
-              side="left"
-              pageSet={pageSet}
-              onMonthChange={onMonthChange}
-            />
-
             <header className="month-header">
               <div className="month-number">{month}</div>
 
