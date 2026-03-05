@@ -66,6 +66,32 @@ Use Chromium browsers (Chrome/Edge) for best print-to-PDF hyperlink behavior.
 
 Tip: in GoodNotes, links are easiest to trigger in read-only mode.
 
+Confirmed in this project: exported planner links work in GoodNotes.
+
+## Screenshots and GIF
+
+### Month + Week Spread
+
+![Month and week spread](docs/media/month-week-spread.png)
+
+### Planning Spread
+
+![Planning spread](docs/media/planning-spread.png)
+
+### Notes Spread
+
+![Notes spread](docs/media/notes-spread.png)
+
+### Navigation Demo
+
+![Navigation demo](docs/media/navigation-demo.gif)
+
+## Known Limitations
+
+- Hyperlink behavior depends on the PDF engine used during export. Chrome/Edge are recommended.
+- GoodNotes does not provide true single-window facing pages; split view with two windows is the workaround.
+- iPad page ratio is tuned for 4:3 layouts, but final appearance can vary slightly based on print settings and margins.
+
 ## Deploy to GitHub Pages
 
 This project is configured for `gh-pages` deployment.
