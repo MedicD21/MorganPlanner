@@ -124,15 +124,12 @@ public class ApplePencilPlugin: CAPPlugin, CAPBridgedPlugin, UIPencilInteraction
     }
 
     private func preferredActionString(_ action: UIPencilPreferredAction) -> String {
-        // Handle newer actions first when available
         if #available(iOS 17.5, *) {
-            switch action {
-            case .showContextualPalette:
+            if action == .showContextualPalette {
                 return "showContextualPalette"
-            case .runSystemShortcut:
+            }
+            if action == .runSystemShortcut {
                 return "runSystemShortcut"
-            @unknown default:
-                break
             }
         }
 
@@ -142,7 +139,6 @@ public class ApplePencilPlugin: CAPPlugin, CAPBridgedPlugin, UIPencilInteraction
             }
         }
 
-        // Fallback for all remaining known legacy cases
         switch action {
         case .ignore:
             return "ignore"
@@ -152,7 +148,7 @@ public class ApplePencilPlugin: CAPPlugin, CAPBridgedPlugin, UIPencilInteraction
             return "switchPrevious"
         case .showColorPalette:
             return "showColorPalette"
-        @unknown default:
+        default:
             return "unknown"
         }
     }
