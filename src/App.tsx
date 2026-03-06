@@ -3,9 +3,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useCallback,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import "./App.css";
 import MonthlyView from "./planner/MonthlyView";
 
@@ -38,7 +40,56 @@ const PLANNER_UNDO_EVENT = "planner-undo";
 const PLANNER_REDO_EVENT = "planner-redo";
 const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
 
-type ShapeKind = "line" | "rectangle" | "ellipse";
+interface ApplePencilTapEvent {
+  timestamp: number;
+  preferredAction?: string;
+  hoverPose?: {
+    locationX: number;
+    locationY: number;
+    zOffset: number;
+    azimuthAngle: number;
+    altitudeAngle: number;
+    rollAngle: number;
+  } | null;
+}
+
+interface ApplePencilSqueezeEvent {
+  timestamp: number;
+  phase?: string;
+  preferredAction?: string;
+  hoverPose?: {
+    locationX: number;
+    locationY: number;
+    zOffset: number;
+    azimuthAngle: number;
+    altitudeAngle: number;
+    rollAngle: number;
+  } | null;
+}
+
+interface ApplePencilCapabilities {
+  available: boolean;
+  supportsTap: boolean;
+  supportsSqueeze: boolean;
+  prefersPencilOnlyDrawing: boolean;
+  preferredTapAction: string;
+  preferredSqueezeAction: string;
+  prefersHoverToolPreview: boolean;
+}
+
+interface ApplePencilPlugin {
+  addListener(
+    eventName: "pencilTap",
+    listener: (event: ApplePencilTapEvent) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "pencilSqueeze",
+    listener: (event: ApplePencilSqueezeEvent) => void,
+  ): Promise<PluginListenerHandle>;
+  getCapabilities(): Promise<ApplePencilCapabilities>;
+}
+
+type ShapeKind = "line" | "rectangle" | "ellipse" | "triangle";
 type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
 type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
 type InkTool =
@@ -132,6 +183,7 @@ const SHAPE_OPTIONS: Array<{ label: string; value: ShapeKind }> = [
   { label: "Line", value: "line" },
   { label: "Rect", value: "rectangle" },
   { label: "Oval", value: "ellipse" },
+  { label: "Tri", value: "triangle" },
 ];
 
 const SYMBOL_OPTIONS: SymbolOption[] = [
@@ -334,6 +386,17 @@ function isLikelyStylusPointerEvent(
   }
 
   return false;
+}
+
+function shouldSkipStageTouchTracking(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.closest("a, button, input, select, label, textarea, [role='button']") !==
+    null
+  );
 }
 
 function isDrawingTool(tool: InkTool): tool is DrawingTool {
@@ -572,9 +635,28 @@ export default function App() {
   useEffect(() => {
     // Keep the app fixed in-place on iPad while preserving pinch zoom.
     const preventSingleFingerPan = (event: TouchEvent) => {
-      if (event.touches.length === 1) {
-        event.preventDefault();
+      if (zoomScaleRef.current > MIN_ZOOM_SCALE + 0.001) {
+        return;
       }
+
+      if (event.touches.length !== 1) {
+        return;
+      }
+
+      const stage = plannerStageRef.current;
+      const target = event.target;
+      if (!stage || !(target instanceof HTMLElement) || !stage.contains(target)) {
+        return;
+      }
+
+      const startedOnInteractiveControl =
+        target.closest("a, button, input, select, label, textarea, [role='button']") !==
+        null;
+      if (startedOnInteractiveControl) {
+        return;
+      }
+
+      event.preventDefault();
     };
 
     document.addEventListener("touchmove", preventSingleFingerPan, {
@@ -608,7 +690,7 @@ export default function App() {
     }
   };
 
-  const toggleEraserFromPencilDoubleTap = () => {
+  const toggleEraserFromPencilDoubleTap = useCallback(() => {
     setActiveTool((currentTool) => {
       if (currentTool === "eraser") {
         return lastNonEraserToolRef.current === "eraser"
@@ -620,12 +702,81 @@ export default function App() {
       return "eraser";
     });
     setActiveSymbol("");
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+
+    const applePencilPlugin = registerPlugin<ApplePencilPlugin>("ApplePencil");
+    let canceled = false;
+    const listenerHandles: PluginListenerHandle[] = [];
+
+    const registerApplePencilListeners = async () => {
+      try {
+        await applePencilPlugin.getCapabilities();
+
+        if (canceled) {
+          return;
+        }
+
+        const tapHandle = await applePencilPlugin.addListener(
+          "pencilTap",
+          () => {
+            toggleEraserFromPencilDoubleTap();
+          },
+        );
+        listenerHandles.push(tapHandle);
+
+        const squeezeHandle = await applePencilPlugin.addListener(
+          "pencilSqueeze",
+          (event) => {
+            if (event.phase === "changed" || event.phase === "began") {
+              return;
+            }
+            toggleEraserFromPencilDoubleTap();
+          },
+        );
+        listenerHandles.push(squeezeHandle);
+      } catch {
+        // Native Apple Pencil bridge is unavailable on web and older runtimes.
+      }
+    };
+
+    void registerApplePencilListeners();
+
+    return () => {
+      canceled = true;
+      for (const handle of listenerHandles) {
+        handle.remove().catch(() => {
+          // Ignore listener cleanup failures during unmount.
+        });
+      }
+    };
+  }, [toggleEraserFromPencilDoubleTap]);
 
   const getActiveInkPageId = () => {
     const plannerWindow = window as Window & { __plannerActiveInkPageId?: string };
     const candidate = plannerWindow[ACTIVE_INK_PAGE_KEY];
-    return typeof candidate === "string" ? candidate : null;
+    if (typeof candidate === "string") {
+      const activeMatch = document.querySelector<HTMLElement>(
+        `.planner-spread.is-active .ink-layer-root[data-ink-page-id="${candidate}"]`,
+      );
+      if (activeMatch) {
+        return candidate;
+      }
+    }
+
+    const activeInkLayer = document.querySelector<HTMLElement>(
+      ".planner-spread.is-active .ink-layer-root[data-ink-page-id]",
+    );
+    const fallbackPageId = activeInkLayer?.dataset.inkPageId;
+    if (typeof fallbackPageId === "string" && fallbackPageId.length > 0) {
+      return fallbackPageId;
+    }
+
+    return null;
   };
 
   const dispatchHistoryEvent = (eventName: string) => {
@@ -645,6 +796,86 @@ export default function App() {
   const triggerRedo = () => {
     dispatchHistoryEvent(PLANNER_REDO_EVENT);
   };
+
+  const handleStylusUiPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isLikelyStylusPointerEvent(event)) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const interactiveElement = target.closest<HTMLElement>(
+        "button, a, input, select, label, textarea, [role='button']",
+      );
+      if (!interactiveElement) {
+        return;
+      }
+
+      const disableAwareElement = interactiveElement as HTMLElement & {
+        disabled?: boolean;
+      };
+      if (disableAwareElement.disabled === true) {
+        return;
+      }
+
+      if (interactiveElement instanceof HTMLInputElement) {
+        const inputType = interactiveElement.type;
+        if (inputType === "range") {
+          interactiveElement.focus();
+          return;
+        }
+        if (inputType === "text" || inputType === "search" || inputType === "color") {
+          event.preventDefault();
+          interactiveElement.focus();
+          interactiveElement.click();
+          return;
+        }
+        if (inputType === "checkbox" || inputType === "radio") {
+          event.preventDefault();
+          interactiveElement.click();
+          return;
+        }
+      }
+
+      if (
+        interactiveElement instanceof HTMLTextAreaElement ||
+        interactiveElement instanceof HTMLSelectElement
+      ) {
+        event.preventDefault();
+        interactiveElement.focus();
+        interactiveElement.click();
+        return;
+      }
+
+      if (interactiveElement instanceof HTMLLabelElement) {
+        const labeledInput = interactiveElement.control as
+          | (HTMLElement & { disabled?: boolean; focus: () => void; click: () => void })
+          | null;
+        if (labeledInput && labeledInput.disabled !== true) {
+          event.preventDefault();
+          labeledInput.focus();
+          labeledInput.click();
+        }
+        return;
+      }
+
+      if (interactiveElement instanceof HTMLButtonElement) {
+        event.preventDefault();
+        interactiveElement.click();
+        return;
+      }
+
+      if (interactiveElement instanceof HTMLAnchorElement) {
+        // Let anchor taps follow native navigation/click behavior.
+        interactiveElement.focus();
+      }
+    },
+    [],
+  );
 
   const clampZoomOffset = (
     candidate: { x: number; y: number },
@@ -716,6 +947,10 @@ export default function App() {
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
+      return;
+    }
+
+    if (shouldSkipStageTouchTracking(event.target)) {
       return;
     }
 
@@ -1075,57 +1310,9 @@ export default function App() {
         ? textStamp.trim() || "note"
         : null;
 
-  const handleToolbarPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!isLikelyStylusPointerEvent(event)) {
-      return;
-    }
-
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) {
-      return;
-    }
-
-    const button = target.closest("button") as HTMLButtonElement | null;
-    if (button && !button.disabled) {
-      event.preventDefault();
-      button.click();
-      return;
-    }
-
-    const colorInput = target.closest(
-      'input[type="color"]',
-    ) as HTMLInputElement | null;
-    if (colorInput && !colorInput.disabled) {
-      event.preventDefault();
-      colorInput.focus();
-      colorInput.click();
-      return;
-    }
-
-    const checkboxInput = target.closest(
-      'input[type="checkbox"]',
-    ) as HTMLInputElement | null;
-    if (checkboxInput && !checkboxInput.disabled) {
-      event.preventDefault();
-      checkboxInput.click();
-      return;
-    }
-
-    const textInput = target.closest(
-      'input[type="text"], textarea',
-    ) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (textInput && !textInput.matches(":disabled")) {
-      textInput.focus();
-    }
-  };
-
   return (
-    <main className="app-shell">
-      <header
-        className="top-ink-toolbar"
-        aria-label="Writing tools"
-        onPointerDownCapture={handleToolbarPointerDown}
-      >
+    <main className="app-shell" onPointerDownCapture={handleStylusUiPointerDownCapture}>
+      <header className="top-ink-toolbar" aria-label="Writing tools">
         <div className="top-toolbar-row">
           <div className="top-toolbar-group">
             {TOOL_SEQUENCE.map((tool) => (
@@ -1196,31 +1383,6 @@ export default function App() {
             </span>
           </div>
 
-          <div className="top-toolbar-group tip-selector-group">
-            {TIP_OPTIONS.map((tipOption) => (
-              <button
-                key={tipOption.value}
-                type="button"
-                className={
-                  activeTip === tipOption.value
-                    ? "toolbar-button tip-chip-button active"
-                    : "toolbar-button tip-chip-button"
-                }
-                onClick={() => {
-                  setActiveTip(tipOption.value);
-                }}
-                title={`${tipOption.label} tip`}
-                disabled={!canSelectTip}
-              >
-                <span
-                  className={`tip-chip-line tip-line-${tipOption.value}`}
-                  aria-hidden="true"
-                />
-                <span>{tipOption.label}</span>
-              </button>
-            ))}
-          </div>
-
           <div className="top-toolbar-group styles-chip-row">
             {favoriteStyles.slice(0, 4).map((preset) => (
               <button
@@ -1262,6 +1424,31 @@ export default function App() {
         </div>
 
         <div className="top-toolbar-row">
+          <div className="top-toolbar-group tip-selector-group">
+            {TIP_OPTIONS.map((tipOption) => (
+              <button
+                key={tipOption.value}
+                type="button"
+                className={
+                  activeTip === tipOption.value
+                    ? "toolbar-button tip-chip-button active"
+                    : "toolbar-button tip-chip-button"
+                }
+                onClick={() => {
+                  setActiveTip(tipOption.value);
+                }}
+                title={`${tipOption.label} tip`}
+                disabled={!canSelectTip}
+              >
+                <span
+                  className={`tip-chip-line tip-line-${tipOption.value}`}
+                  aria-hidden="true"
+                />
+                <span>{tipOption.label}</span>
+              </button>
+            ))}
+          </div>
+
           <div
             className="top-toolbar-group color-swatch-row"
             aria-label="Color swatches"

@@ -31,7 +31,7 @@ interface MonthlyViewProps {
     | "lasso"
     | "image"
     | "sticky";
-  inkShapeKind?: "line" | "rectangle" | "ellipse";
+  inkShapeKind?: "line" | "rectangle" | "ellipse" | "triangle";
   inkImageSrc?: string | null;
   inkEraseRadius?: number;
   onInkInputType?: (inputType: InkInputType) => void;
@@ -63,6 +63,39 @@ interface WeekTabsProps {
 
 const NOTES_RULED_LINE_COUNT = 24;
 type SpreadView = "month-week" | "planning" | "notes";
+
+function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boolean {
+  if (event.pointerType === "pen") {
+    return true;
+  }
+
+  const nativeEvent = event.nativeEvent as PointerEvent & {
+    touchType?: string;
+  };
+  if (nativeEvent.touchType === "stylus") {
+    return true;
+  }
+
+  if (event.pointerType !== "touch") {
+    return false;
+  }
+
+  if ((Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) && event.pressure > 0) {
+    return true;
+  }
+
+  if (
+    event.width > 0 &&
+    event.height > 0 &&
+    event.width <= 8 &&
+    event.height <= 8 &&
+    event.pressure > 0
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 function updateHash(hashValue: string): void {
   if (window.location.hash === hashValue) {
@@ -364,7 +397,7 @@ export default function MonthlyView({
   }
 
   const handleWeekSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.pointerType !== "touch") {
+    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
       return;
     }
 
@@ -406,7 +439,7 @@ export default function MonthlyView({
   };
 
   const handleMonthSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.pointerType !== "touch") {
+    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
       return;
     }
 

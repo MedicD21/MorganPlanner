@@ -1,8 +1,8 @@
-# GoodNotes Planner Generator
+# OnPurpose Planner App
 
-A React + Vite app for generating a printable digital planner layout for GoodNotes.
+A React + Vite planner app for iPad/web with handwriting-first interactions.
 
-The app builds monthly/weekly spreads, planning pages, and dedicated notes pages, with in-app navigation and export-ready links.
+The app includes monthly/weekly spreads, planning pages, and notes pages with in-app hash navigation and persistent ink.
 
 ## Features
 
@@ -12,7 +12,8 @@ The app builds monthly/weekly spreads, planning pages, and dedicated notes pages
 - Month tabs and week tabs for navigation
 - Link from month/weekly spread to planning page
 - `NOTES` tab links to notes spread
-- Export current spread or full-year output
+- Canvas ink engine with local per-page persistence
+- Pencil/touch input support with pressure + tilt-aware drawing
 
 ## Stack
 
@@ -54,19 +55,12 @@ npm run build
 npm run lint
 ```
 
-## Exporting for GoodNotes
+## Data Persistence
 
-Use Chromium browsers (Chrome/Edge) for best print-to-PDF hyperlink behavior.
+Ink, symbols, fills, images, and sticky notes are saved in `localStorage` per planner page id.
 
-1. Open the planner in browser.
-2. Click `Export Current Spread` or `Export Full Year`.
-3. In print dialog choose `Save as PDF`.
-4. Keep scale at 100%, disable headers/footers, keep background graphics on.
-5. Import PDF into GoodNotes.
-
-Tip: in GoodNotes, links are easiest to trigger in read-only mode.
-
-Confirmed in this project: exported planner links work in GoodNotes.
+- Data persists across refreshes on the same device/browser profile.
+- Clearing site data (or uninstalling app data on iOS) removes stored ink.
 
 ## Screenshots and GIF
 
@@ -88,9 +82,9 @@ Confirmed in this project: exported planner links work in GoodNotes.
 
 ## Known Limitations
 
-- Hyperlink behavior depends on the PDF engine used during export. Chrome/Edge are recommended.
-- GoodNotes does not provide true single-window facing pages; split view with two windows is the workaround.
-- iPad page ratio is tuned for 4:3 layouts, but final appearance can vary slightly based on print settings and margins.
+- Ink persistence is currently local-device only (no cloud sync yet).
+- Large local ink histories can increase memory/storage usage over time.
+- Facing-page book mode is not native in single-webview contexts; spreads are presented as full-width views.
 
 ## Deploy to GitHub Pages
 

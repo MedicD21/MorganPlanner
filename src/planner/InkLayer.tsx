@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 export type InkInputType = "pen" | "touch" | "mouse" | "unknown";
-export type InkShapeKind = "line" | "rectangle" | "ellipse";
+export type InkShapeKind = "line" | "rectangle" | "ellipse" | "triangle";
 export type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
 export type InkLayerMode =
   | "draw"
@@ -32,6 +32,12 @@ interface InkPoint {
   x: number;
   y: number;
   pressure: number;
+  tiltX?: number;
+  tiltY?: number;
+  altitudeAngle?: number;
+  azimuthAngle?: number;
+  twist?: number;
+  tangentialPressure?: number;
   timestamp?: number;
 }
 
@@ -144,6 +150,12 @@ interface PointerLikeEvent {
   clientX: number;
   clientY: number;
   pressure: number;
+  tiltX: number;
+  tiltY: number;
+  altitudeAngle?: number;
+  azimuthAngle?: number;
+  twist?: number;
+  tangentialPressure?: number;
   target: EventTarget | null;
   preventDefault: () => void;
   stopPropagation: () => void;
@@ -249,9 +261,71 @@ function tipLineJoin(tip: InkTipKind): CanvasLineJoin {
   return "round";
 }
 
-function strokeSegmentWidth(stroke: InkStroke, pressure: number): number {
+function normalizeAngle(value: number | undefined): number | null {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return value as number;
+}
+
+function normalizedTiltAmount(point: InkPoint): number {
+  const altitude = normalizeAngle(point.altitudeAngle);
+  if (altitude !== null) {
+    const normalizedAltitude = clampNumber(altitude / (Math.PI / 2), 0, 1);
+    return 1 - normalizedAltitude;
+  }
+
+  const tiltX = Number.isFinite(point.tiltX) ? Math.abs(point.tiltX ?? 0) : 0;
+  const tiltY = Number.isFinite(point.tiltY) ? Math.abs(point.tiltY ?? 0) : 0;
+  const tiltMagnitude = Math.hypot(tiltX, tiltY);
+  return clampNumber(tiltMagnitude / 90, 0, 1);
+}
+
+function segmentTiltAmount(previousPoint: InkPoint, currentPoint: InkPoint): number {
+  return (normalizedTiltAmount(previousPoint) + normalizedTiltAmount(currentPoint)) / 2;
+}
+
+function tipTiltFactor(
+  tip: InkTipKind,
+  previousPoint: InkPoint,
+  currentPoint: InkPoint,
+): number {
+  const tilt = segmentTiltAmount(previousPoint, currentPoint);
+  if (tilt <= 0.0001) {
+    return 1;
+  }
+
+  if (tip === "fine") {
+    return 1 + tilt * 0.16;
+  }
+
+  if (tip === "fountain") {
+    return 1 + tilt * 0.22;
+  }
+
+  if (tip === "marker") {
+    return 1 + tilt * 0.3;
+  }
+
+  if (tip === "chisel") {
+    return 1 + tilt * 0.44;
+  }
+
+  return 1 + tilt * 0.24;
+}
+
+function strokeSegmentWidth(
+  stroke: InkStroke,
+  pressure: number,
+  previousPoint?: InkPoint,
+  currentPoint?: InkPoint,
+): number {
   const tip = normalizeInkTip(stroke.tip);
-  return stroke.width * tipWidthMultiplier(tip) * tipPressureFactor(tip, pressure);
+  const baseWidth = stroke.width * tipWidthMultiplier(tip) * tipPressureFactor(tip, pressure);
+  if (!previousPoint || !currentPoint) {
+    return baseWidth;
+  }
+  return baseWidth * tipTiltFactor(tip, previousPoint, currentPoint);
 }
 
 function normalizeStrokeTip<T extends { tip?: InkTipKind }>(stroke: T): T {
@@ -430,10 +504,20 @@ function getRelativePoint(
 ): InkPoint {
   const x = (event.clientX - metrics.rect.left) / metrics.scaleX;
   const y = (event.clientY - metrics.rect.top) / metrics.scaleY;
+  const pressure = clampPressure(event.pressure);
+
   return {
     x: clampNumber(x, 0, metrics.width),
     y: clampNumber(y, 0, metrics.height),
-    pressure: clampPressure(event.pressure),
+    pressure,
+    tiltX: Number.isFinite(event.tiltX) ? event.tiltX : 0,
+    tiltY: Number.isFinite(event.tiltY) ? event.tiltY : 0,
+    altitudeAngle: normalizeAngle(event.altitudeAngle) ?? undefined,
+    azimuthAngle: normalizeAngle(event.azimuthAngle) ?? undefined,
+    twist: Number.isFinite(event.twist) ? event.twist : undefined,
+    tangentialPressure: Number.isFinite(event.tangentialPressure)
+      ? event.tangentialPressure
+      : undefined,
     timestamp: Date.now(),
   };
 }
@@ -1061,6 +1145,34 @@ function shapeStrokeFromPoints(
     };
   }
 
+  if (kind === "triangle") {
+    const rect = makeRectFromPoints(start, end);
+    const top: InkPoint = {
+      x: rect.x + rect.width / 2,
+      y: rect.y,
+      pressure: 1,
+    };
+    const bottomRight: InkPoint = {
+      x: rect.x + rect.width,
+      y: rect.y + rect.height,
+      pressure: 1,
+    };
+    const bottomLeft: InkPoint = {
+      x: rect.x,
+      y: rect.y + rect.height,
+      pressure: 1,
+    };
+
+    return {
+      color,
+      width,
+      opacity,
+      tip,
+      points: [top, bottomRight, bottomLeft, top],
+      clipRect,
+    };
+  }
+
   const rect = makeRectFromPoints(start, end);
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
@@ -1104,6 +1216,118 @@ function pathLength(points: InkPoint[]): number {
 
 function pointToLineDistance(point: InkPoint, a: InkPoint, b: InkPoint): number {
   return distancePointToSegment(point, a, b);
+}
+
+function triangleArea(a: InkPoint, b: InkPoint, c: InkPoint): number {
+  return Math.abs((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2);
+}
+
+function convexHullPoints(points: InkPoint[]): InkPoint[] {
+  if (points.length <= 3) {
+    return points.slice();
+  }
+
+  const sorted = [...points].sort((a, b) => {
+    if (a.x === b.x) {
+      return a.y - b.y;
+    }
+    return a.x - b.x;
+  });
+
+  const lower: InkPoint[] = [];
+  for (const point of sorted) {
+    while (
+      lower.length >= 2 &&
+      crossProduct(lower[lower.length - 2], lower[lower.length - 1], point) <= 0
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  const upper: InkPoint[] = [];
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    const point = sorted[i];
+    while (
+      upper.length >= 2 &&
+      crossProduct(upper[upper.length - 2], upper[upper.length - 1], point) <= 0
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function inferTriangleVertices(points: InkPoint[]): [InkPoint, InkPoint, InkPoint] | null {
+  const hull = convexHullPoints(points);
+  if (hull.length < 3) {
+    return null;
+  }
+
+  let first = hull[0];
+  let second = hull[1];
+  let maxDistanceSq = 0;
+  for (let i = 0; i < hull.length; i += 1) {
+    for (let j = i + 1; j < hull.length; j += 1) {
+      const dx = hull[i].x - hull[j].x;
+      const dy = hull[i].y - hull[j].y;
+      const distanceSq = dx * dx + dy * dy;
+      if (distanceSq > maxDistanceSq) {
+        maxDistanceSq = distanceSq;
+        first = hull[i];
+        second = hull[j];
+      }
+    }
+  }
+
+  let third: InkPoint | null = null;
+  let farthestDistance = 0;
+  for (const candidate of hull) {
+    if (
+      (candidate.x === first.x && candidate.y === first.y) ||
+      (candidate.x === second.x && candidate.y === second.y)
+    ) {
+      continue;
+    }
+    const distance = pointToLineDistance(candidate, first, second);
+    if (distance > farthestDistance) {
+      farthestDistance = distance;
+      third = candidate;
+    }
+  }
+
+  if (!third || farthestDistance <= Math.sqrt(maxDistanceSq) * 0.14) {
+    return null;
+  }
+
+  const area = triangleArea(first, second, third);
+  if (area < 24) {
+    return null;
+  }
+
+  return [first, second, third];
+}
+
+function triangleStrokeFromVertices(
+  vertices: [InkPoint, InkPoint, InkPoint],
+  stroke: InkStroke,
+): InkStroke {
+  return {
+    color: stroke.color,
+    width: stroke.width,
+    opacity: stroke.opacity,
+    tip: normalizeInkTip(stroke.tip),
+    clipRect: stroke.clipRect,
+    points: [vertices[0], vertices[1], vertices[2], vertices[0]].map((point) => ({
+      x: point.x,
+      y: point.y,
+      pressure: 1,
+    })),
+  };
 }
 
 function detectAutoShapeStroke(
@@ -1195,7 +1419,7 @@ function detectAutoShapeStroke(
     }
   }
 
-  if (edgeCoverage >= 0.72 && touchedCorners >= 3) {
+  if (edgeCoverage >= 0.7 && touchedCorners >= 3) {
     return shapeStrokeFromPoints(
       "rectangle",
       { x: minX, y: minY, pressure: 1 },
@@ -1206,6 +1430,11 @@ function detectAutoShapeStroke(
       stroke.clipRect,
       normalizeInkTip(stroke.tip),
     );
+  }
+
+  const triangleVertices = inferTriangleVertices(points);
+  if (triangleVertices) {
+    return triangleStrokeFromVertices(triangleVertices, stroke);
   }
 
   const radiusX = width / 2;
@@ -1230,7 +1459,7 @@ function detectAutoShapeStroke(
     Math.PI * (3 * (radiusX + radiusY) - Math.sqrt((3 * radiusX + radiusY) * (radiusX + 3 * radiusY)));
   const perimeterRatio = ellipsePerimeterApprox > 0 ? travel / ellipsePerimeterApprox : 0;
 
-  if (meanEllipseError <= 0.34 && perimeterRatio > 0.65 && perimeterRatio < 1.45) {
+  if (meanEllipseError <= 0.42 && perimeterRatio > 0.52 && perimeterRatio < 1.7) {
     return shapeStrokeFromPoints(
       "ellipse",
       { x: minX, y: minY, pressure: 1 },
@@ -1287,6 +1516,50 @@ export default function InkLayer({
   const undoStackRef = useRef<InkDocument[]>([]);
   const redoStackRef = useRef<InkDocument[]>([]);
   const didSnapshotDuringDragRef = useRef<boolean>(false);
+  const runtimeConfigRef = useRef({
+    allowTouch,
+    onInputType,
+    color,
+    lineWidth,
+    opacity,
+    symbol,
+    tipKind,
+    lockToCells,
+    mode,
+    shapeKind,
+    imageSrc,
+    eraseRadius,
+  });
+
+  useEffect(() => {
+    runtimeConfigRef.current = {
+      allowTouch,
+      onInputType,
+      color,
+      lineWidth,
+      opacity,
+      symbol,
+      tipKind,
+      lockToCells,
+      mode,
+      shapeKind,
+      imageSrc,
+      eraseRadius,
+    };
+  }, [
+    allowTouch,
+    color,
+    eraseRadius,
+    imageSrc,
+    lineWidth,
+    lockToCells,
+    mode,
+    onInputType,
+    opacity,
+    shapeKind,
+    symbol,
+    tipKind,
+  ]);
 
   const persistInk = useCallback(() => {
     try {
@@ -1498,7 +1771,12 @@ export default function InkLayer({
             const currentPoint = stroke.points[i];
             const segmentPressure =
               (previousPoint.pressure + currentPoint.pressure) / 2;
-            ctx.lineWidth = strokeSegmentWidth(stroke, segmentPressure);
+            ctx.lineWidth = strokeSegmentWidth(
+              stroke,
+              segmentPressure,
+              previousPoint,
+              currentPoint,
+            );
             ctx.beginPath();
             ctx.moveTo(previousPoint.x, previousPoint.y);
             ctx.lineTo(currentPoint.x, currentPoint.y);
@@ -1527,13 +1805,14 @@ export default function InkLayer({
 
       const activeShape = activeShapeRef.current;
       if (activeShape) {
+        const runtimeConfig = runtimeConfigRef.current;
         const previewStroke = shapeStrokeFromPoints(
-          shapeKind,
+          runtimeConfig.shapeKind,
           activeShape.start,
           activeShape.current,
-          color,
-          lineWidth,
-          clampOpacity(opacity),
+          runtimeConfig.color,
+          runtimeConfig.lineWidth,
+          clampOpacity(runtimeConfig.opacity),
           activeShape.clipRect,
           activeShape.tip,
         );
@@ -1543,7 +1822,12 @@ export default function InkLayer({
           ctx.lineCap = tipLineCap(previewTip);
           ctx.lineJoin = tipLineJoin(previewTip);
           ctx.globalAlpha = previewStroke.opacity;
-          ctx.lineWidth = strokeSegmentWidth(previewStroke, 1);
+          ctx.lineWidth = strokeSegmentWidth(
+            previewStroke,
+            1,
+            previewStroke.points[0],
+            previewStroke.points[1],
+          );
 
           ctx.beginPath();
           ctx.moveTo(previewStroke.points[0].x, previewStroke.points[0].y);
@@ -1620,7 +1904,12 @@ export default function InkLayer({
         ctx.lineCap = tipLineCap(normalizedTip);
         ctx.lineJoin = tipLineJoin(normalizedTip);
         ctx.globalAlpha = clampOpacity(stroke.opacity);
-        ctx.lineWidth = strokeSegmentWidth(stroke, segmentPressure);
+        ctx.lineWidth = strokeSegmentWidth(
+          stroke,
+          segmentPressure,
+          previousPoint,
+          currentPoint,
+        );
         ctx.beginPath();
         ctx.moveTo(previousPoint.x, previousPoint.y);
         ctx.lineTo(currentPoint.x, currentPoint.y);
@@ -1637,7 +1926,7 @@ export default function InkLayer({
         event.pointerType === "pen" ||
         event.pointerType === "mouse" ||
         event.pointerType === "unknown" ||
-        (allowTouch && event.pointerType === "touch")
+        (runtimeConfigRef.current.allowTouch && event.pointerType === "touch")
       );
     };
 
@@ -1648,7 +1937,7 @@ export default function InkLayer({
     };
 
     const eraseAtPoint = (point: InkPoint) => {
-      const radius = Math.max(6, eraseRadius);
+      const radius = Math.max(6, runtimeConfigRef.current.eraseRadius);
       const candidateStrokes: InkStroke[] = [];
       for (const stroke of strokesRef.current) {
         const remaining = eraseStrokeAtPoint(stroke, point, radius);
@@ -1721,7 +2010,6 @@ export default function InkLayer({
         fillsRef.current = nextFills;
         stickiesRef.current = nextStickies;
         setStickyNotes(nextStickies);
-        persistInk();
         redraw();
       }
     };
@@ -1947,12 +2235,15 @@ export default function InkLayer({
         return;
       }
 
+      const runtimeConfig = runtimeConfigRef.current;
+      const activeMode = runtimeConfig.mode;
+
       if (event.target instanceof HTMLElement) {
         const isInkDrawingMode =
-          mode === "draw" ||
-          mode === "erase" ||
-          mode === "shape" ||
-          mode === "lasso";
+          activeMode === "draw" ||
+          activeMode === "erase" ||
+          activeMode === "shape" ||
+          activeMode === "lasso";
         const blockedTarget = isInkDrawingMode
           ? event.target.closest("a, button, input, select, label")
           : event.target.closest(
@@ -1963,12 +2254,14 @@ export default function InkLayer({
         }
       }
 
-      const cellClipRect = lockToCells ? getCellClipRect(event, surface) : null;
-      if (lockToCells && !cellClipRect) {
+      const cellClipRect = runtimeConfig.lockToCells
+        ? getCellClipRect(event, surface)
+        : null;
+      if (runtimeConfig.lockToCells && !cellClipRect) {
         return;
       }
 
-      onInputType?.(event.pointerType);
+      runtimeConfig.onInputType?.(event.pointerType);
       setActiveInkPage();
       const canvasMetrics = getSurfaceMetrics(canvas);
       const point = getRelativePoint(event, canvasMetrics);
@@ -1979,7 +2272,7 @@ export default function InkLayer({
       const effectiveClipRect = stickyTargetRect ?? null;
       const attachedStickyId = stickyTarget?.id;
 
-      if (mode === "erase") {
+      if (activeMode === "erase") {
         activeEraserPointerIdRef.current = event.pointerId;
         if (!didSnapshotDuringDragRef.current) {
           captureUndoSnapshot();
@@ -1991,7 +2284,7 @@ export default function InkLayer({
         return;
       }
 
-      if (mode === "bucket") {
+      if (activeMode === "bucket") {
         const bucketStrokeTarget = findBucketTargetStroke(
           strokesRef.current,
           point,
@@ -2009,7 +2302,7 @@ export default function InkLayer({
           const nextFill: InkFill = {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             rect: bucketStrokeBounds,
-            color,
+            color: runtimeConfig.color,
             opacity: BUCKET_FILL_OPACITY,
             points: bucketStrokeTarget.points.map((fillPoint) => ({
               ...fillPoint,
@@ -2042,7 +2335,7 @@ export default function InkLayer({
         const nextFill: InkFill = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           rect: fillRect,
-          color,
+          color: runtimeConfig.color,
           opacity: BUCKET_FILL_OPACITY,
           stickyId: attachedStickyId,
         };
@@ -2062,12 +2355,12 @@ export default function InkLayer({
         return;
       }
 
-      if (mode === "shape") {
+      if (activeMode === "shape") {
         activeShapeRef.current = {
           pointerId: event.pointerId,
           start: point,
           current: point,
-          tip: normalizeInkTip(tipKind),
+          tip: normalizeInkTip(runtimeConfig.tipKind),
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
         };
@@ -2078,7 +2371,7 @@ export default function InkLayer({
         return;
       }
 
-      if (mode === "lasso") {
+      if (activeMode === "lasso") {
         const currentSelection = lassoSelectionRef.current;
         if (currentSelection && rectContainsPoint(currentSelection.bounds, point)) {
           if (!didSnapshotDuringDragRef.current) {
@@ -2105,7 +2398,7 @@ export default function InkLayer({
         return;
       }
 
-      if (mode === "sticky") {
+      if (activeMode === "sticky") {
         captureUndoSnapshot();
         const unclampedSticky: InkSticky = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -2114,7 +2407,7 @@ export default function InkLayer({
           width: DEFAULT_STICKY_WIDTH,
           height: DEFAULT_STICKY_HEIGHT,
           collapsed: false,
-          color: normalizeStickyColor(color),
+          color: normalizeStickyColor(runtimeConfig.color),
         };
         const nextSticky = clampStickyToCanvas(
           unclampedSticky,
@@ -2130,14 +2423,15 @@ export default function InkLayer({
         return;
       }
 
-      if (mode === "image") {
-        if (!imageSrc) {
+      if (activeMode === "image") {
+        const currentImageSrc = runtimeConfig.imageSrc;
+        if (!currentImageSrc) {
           return;
         }
 
         captureUndoSnapshot();
-        const baseWidth = Math.max(68, lineWidth * 30);
-        const cached = getOrCreateImage(imageSrc);
+        const baseWidth = Math.max(68, runtimeConfig.lineWidth * 30);
+        const cached = getOrCreateImage(currentImageSrc);
         const imageRatio =
           cached.naturalWidth > 0 && cached.naturalHeight > 0
             ? cached.naturalHeight / cached.naturalWidth
@@ -2150,8 +2444,8 @@ export default function InkLayer({
           y: point.y - imageHeight / 2,
           width: imageWidth,
           height: imageHeight,
-          src: imageSrc,
-          opacity: clampOpacity(opacity),
+          src: currentImageSrc,
+          opacity: clampOpacity(runtimeConfig.opacity),
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
         };
@@ -2163,15 +2457,15 @@ export default function InkLayer({
         return;
       }
 
-      if (symbol) {
+      if (runtimeConfig.symbol) {
         captureUndoSnapshot();
         const nextSymbol: InkSymbol = {
           x: point.x,
           y: point.y,
-          symbol,
-          color,
-          size: Math.max(10, lineWidth * 6),
-          opacity: clampOpacity(opacity),
+          symbol: runtimeConfig.symbol,
+          color: runtimeConfig.color,
+          size: Math.max(10, runtimeConfig.lineWidth * 6),
+          opacity: clampOpacity(runtimeConfig.opacity),
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
         };
@@ -2186,10 +2480,10 @@ export default function InkLayer({
       activeStrokeRef.current = {
         pointerId: event.pointerId,
         stroke: {
-          color,
-          width: lineWidth,
-          opacity: clampOpacity(opacity),
-          tip: normalizeInkTip(tipKind),
+          color: runtimeConfig.color,
+          width: runtimeConfig.lineWidth,
+          opacity: clampOpacity(runtimeConfig.opacity),
+          tip: normalizeInkTip(runtimeConfig.tipKind),
           points: [point],
           clipRect: effectiveClipRect,
           stickyId: attachedStickyId,
@@ -2273,7 +2567,7 @@ export default function InkLayer({
       const movementX = latestPoint.x - previousPoint.x;
       const movementY = latestPoint.y - previousPoint.y;
       activeStroke.stroke.points.push(latestPoint);
-      if (movementX * movementX + movementY * movementY >= 4) {
+      if (movementX * movementX + movementY * movementY >= 16) {
         activeStroke.lastMoveTime = Date.now();
       }
       drawStrokeSegment(activeStroke.stroke);
@@ -2282,8 +2576,11 @@ export default function InkLayer({
     };
 
     const onEnd = (event: PointerLikeEvent) => {
+      const runtimeConfig = runtimeConfigRef.current;
+
       if (activeEraserPointerIdRef.current === event.pointerId) {
         activeEraserPointerIdRef.current = null;
+        persistInk();
         didSnapshotDuringDragRef.current = false;
         maybeStopPropagation(event);
         return;
@@ -2294,12 +2591,12 @@ export default function InkLayer({
         captureUndoSnapshot();
         const nextStroke = {
           ...shapeStrokeFromPoints(
-            shapeKind,
+            runtimeConfig.shapeKind,
             activeShape.start,
             activeShape.current,
-            color,
-            lineWidth,
-            clampOpacity(opacity),
+            runtimeConfig.color,
+            runtimeConfig.lineWidth,
+            clampOpacity(runtimeConfig.opacity),
             activeShape.clipRect,
             activeShape.tip,
           ),
@@ -2353,9 +2650,9 @@ export default function InkLayer({
 
       if (activeStroke.stroke.points.length) {
         const shouldSnapShape =
-          mode === "draw" &&
+          runtimeConfig.mode === "draw" &&
           event.pointerType === "pen" &&
-          !symbol &&
+          !runtimeConfig.symbol &&
           Date.now() - activeStroke.lastMoveTime >= AUTO_SHAPE_HOLD_MS;
         const autoShapeStroke = shouldSnapShape
           ? detectAutoShapeStroke(
@@ -2389,6 +2686,18 @@ export default function InkLayer({
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
+        tiltX: event.tiltX,
+        tiltY: event.tiltY,
+        altitudeAngle: Number.isFinite(event.altitudeAngle)
+          ? event.altitudeAngle
+          : undefined,
+        azimuthAngle: Number.isFinite(event.azimuthAngle)
+          ? event.azimuthAngle
+          : undefined,
+        twist: Number.isFinite(event.twist) ? event.twist : undefined,
+        tangentialPressure: Number.isFinite(event.tangentialPressure)
+          ? event.tangentialPressure
+          : undefined,
         target: event.target,
         preventDefault: () => {
           event.preventDefault();
@@ -2420,6 +2729,18 @@ export default function InkLayer({
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
+        tiltX: event.tiltX,
+        tiltY: event.tiltY,
+        altitudeAngle: Number.isFinite(event.altitudeAngle)
+          ? event.altitudeAngle
+          : undefined,
+        azimuthAngle: Number.isFinite(event.azimuthAngle)
+          ? event.azimuthAngle
+          : undefined,
+        twist: Number.isFinite(event.twist) ? event.twist : undefined,
+        tangentialPressure: Number.isFinite(event.tangentialPressure)
+          ? event.tangentialPressure
+          : undefined,
         target: event.target,
         preventDefault: () => {
           event.preventDefault();
@@ -2440,6 +2761,18 @@ export default function InkLayer({
         clientX: event.clientX,
         clientY: event.clientY,
         pressure: event.pressure,
+        tiltX: event.tiltX,
+        tiltY: event.tiltY,
+        altitudeAngle: Number.isFinite(event.altitudeAngle)
+          ? event.altitudeAngle
+          : undefined,
+        azimuthAngle: Number.isFinite(event.azimuthAngle)
+          ? event.azimuthAngle
+          : undefined,
+        twist: Number.isFinite(event.twist) ? event.twist : undefined,
+        tangentialPressure: Number.isFinite(event.tangentialPressure)
+          ? event.tangentialPressure
+          : undefined,
         target: event.target,
         preventDefault: () => {
           event.preventDefault();
@@ -2467,6 +2800,10 @@ export default function InkLayer({
         }
         const touchWithType = touch as Touch & { touchType?: string };
         const isStylus = touchWithType.touchType === "stylus";
+        const touchWithStylus = touch as Touch & {
+          altitudeAngle?: number;
+          azimuthAngle?: number;
+        };
         touchStylusByPointerIdRef.current.set(pointerId, isStylus);
 
         const pointerEvent: PointerLikeEvent = {
@@ -2476,6 +2813,16 @@ export default function InkLayer({
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
+          tiltX: 0,
+          tiltY: 0,
+          altitudeAngle: Number.isFinite(touchWithStylus.altitudeAngle)
+            ? touchWithStylus.altitudeAngle
+            : undefined,
+          azimuthAngle: Number.isFinite(touchWithStylus.azimuthAngle)
+            ? touchWithStylus.azimuthAngle
+            : undefined,
+          twist: undefined,
+          tangentialPressure: undefined,
           target: event.target,
           preventDefault: () => {
             event.preventDefault();
@@ -2495,6 +2842,10 @@ export default function InkLayer({
           continue;
         }
         const isStylus = touchStylusByPointerIdRef.current.get(pointerId) ?? false;
+        const touchWithStylus = touch as Touch & {
+          altitudeAngle?: number;
+          azimuthAngle?: number;
+        };
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,
@@ -2503,6 +2854,16 @@ export default function InkLayer({
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
+          tiltX: 0,
+          tiltY: 0,
+          altitudeAngle: Number.isFinite(touchWithStylus.altitudeAngle)
+            ? touchWithStylus.altitudeAngle
+            : undefined,
+          azimuthAngle: Number.isFinite(touchWithStylus.azimuthAngle)
+            ? touchWithStylus.azimuthAngle
+            : undefined,
+          twist: undefined,
+          tangentialPressure: undefined,
           target: event.target,
           preventDefault: () => {
             event.preventDefault();
@@ -2525,6 +2886,10 @@ export default function InkLayer({
         const isStylus = touchStylusByPointerIdRef.current.get(pointerId) ?? false;
         touchStylusByPointerIdRef.current.delete(pointerId);
         stylusPointerIdsRef.current.delete(pointerId);
+        const touchWithStylus = touch as Touch & {
+          altitudeAngle?: number;
+          azimuthAngle?: number;
+        };
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,
@@ -2533,6 +2898,16 @@ export default function InkLayer({
           clientX: touch.clientX,
           clientY: touch.clientY,
           pressure: touch.force || 1,
+          tiltX: 0,
+          tiltY: 0,
+          altitudeAngle: Number.isFinite(touchWithStylus.altitudeAngle)
+            ? touchWithStylus.altitudeAngle
+            : undefined,
+          azimuthAngle: Number.isFinite(touchWithStylus.azimuthAngle)
+            ? touchWithStylus.azimuthAngle
+            : undefined,
+          twist: undefined,
+          tangentialPressure: undefined,
           target: event.target,
           preventDefault: () => {
             event.preventDefault();
@@ -2546,12 +2921,19 @@ export default function InkLayer({
     };
 
     const canHandleHistoryEvent = (targetPageId: string | null): boolean => {
-      if (!targetPageId || targetPageId !== pageId) {
+      const spread = surface.closest<HTMLElement>(".planner-spread");
+      if (!spread?.classList.contains("is-active")) {
         return false;
       }
 
-      const spread = surface.closest<HTMLElement>(".planner-spread");
-      return Boolean(spread?.classList.contains("is-active"));
+      if (targetPageId) {
+        return targetPageId === pageId;
+      }
+
+      const topVisibleInkLayer = spread.querySelector<HTMLElement>(
+        ".ink-layer-root[data-ink-page-id]",
+      );
+      return topVisibleInkLayer?.dataset.inkPageId === pageId;
     };
 
     const onUndoEvent = (event: Event) => {
@@ -2635,6 +3017,23 @@ export default function InkLayer({
     resizeCanvas();
     const resizeObserver = new ResizeObserver(resizeCanvas);
     resizeObserver.observe(surface);
+    const spread = surface.closest<HTMLElement>(".planner-spread");
+    const spreadActivationObserver =
+      spread && "MutationObserver" in window
+        ? new MutationObserver(() => {
+            if (spread.classList.contains("is-active")) {
+              requestAnimationFrame(() => {
+                resizeCanvas();
+              });
+            }
+          })
+        : null;
+    if (spreadActivationObserver && spread) {
+      spreadActivationObserver.observe(spread, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
 
     const supportsPointerEvents = "PointerEvent" in window;
 
@@ -2656,6 +3055,7 @@ export default function InkLayer({
       canceled = true;
       redrawRef.current = null;
       resizeObserver.disconnect();
+      spreadActivationObserver?.disconnect();
       surface.removeEventListener("pointerdown", onPointerDown);
       surface.removeEventListener("pointermove", onPointerMove);
       surface.removeEventListener("pointerup", finalizePointer);
@@ -2671,24 +3071,12 @@ export default function InkLayer({
       window.removeEventListener(PLANNER_REDO_EVENT, onRedoEvent);
     };
   }, [
-    allowTouch,
     captureUndoSnapshot,
-    color,
-    eraseRadius,
     handleRedo,
     handleUndo,
-    imageSrc,
-    lineWidth,
-    lockToCells,
-    mode,
-    onInputType,
-    opacity,
     pageId,
     persistInk,
     setActiveInkPage,
-    shapeKind,
-    symbol,
-    tipKind,
   ]);
 
   const expandSticky = (id: string) => {

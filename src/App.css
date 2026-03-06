@@ -576,7 +576,7 @@
 
 .ink-layer-root {
   position: absolute;
-  inset: 0;
+  inset: -1px;
   z-index: 2;
   pointer-events: none;
 }
@@ -673,7 +673,7 @@
   border-right: 1px solid #bcb3ad;
   display: grid;
   grid-template-rows: auto 1fr;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .month-header {
