@@ -497,6 +497,14 @@ function getSurfaceMetrics(element: HTMLElement): SurfaceMetrics {
   };
 }
 
+function getCanvasHostMetrics(canvas: HTMLCanvasElement): SurfaceMetrics {
+  const host = canvas.closest<HTMLElement>(".planner-paper");
+  if (host) {
+    return getSurfaceMetrics(host);
+  }
+  return getSurfaceMetrics(canvas);
+}
+
 function getRelativePoint(
   event: PointerLikeEvent,
   metrics: SurfaceMetrics,
@@ -1409,7 +1417,7 @@ export default function InkLayer({
     };
 
     const redraw = () => {
-      const metrics = getSurfaceMetrics(canvas);
+      const metrics = getCanvasHostMetrics(canvas);
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
       ctx.clearRect(0, 0, metrics.width, metrics.height);
 
@@ -1599,7 +1607,7 @@ export default function InkLayer({
     redrawRef.current = redraw;
 
     const resizeCanvas = () => {
-      const metrics = getSurfaceMetrics(canvas);
+      const metrics = getCanvasHostMetrics(canvas);
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       dprRef.current = dpr;
 
@@ -1854,7 +1862,7 @@ export default function InkLayer({
     };
 
     const moveSelectionBy = (selection: LassoSelection, deltaX: number, deltaY: number) => {
-      const canvasMetrics = getSurfaceMetrics(canvas);
+      const canvasMetrics = getCanvasHostMetrics(canvas);
       const minDeltaX = -selection.bounds.x;
       const maxDeltaX =
         canvasMetrics.width - (selection.bounds.x + selection.bounds.width);
@@ -1959,6 +1967,10 @@ export default function InkLayer({
         return;
       }
 
+      // Hidden spreads can initialize at 1px; ensure the canvas is sized to the paper
+      // when the user starts interacting after a navigation.
+      resizeCanvas();
+
       const runtimeConfig = runtimeConfigRef.current;
       const activeMode = runtimeConfig.mode;
 
@@ -1987,7 +1999,7 @@ export default function InkLayer({
 
       runtimeConfig.onInputType?.(event.pointerType);
       setActiveInkPage();
-      const canvasMetrics = getSurfaceMetrics(canvas);
+      const canvasMetrics = getCanvasHostMetrics(canvas);
       const point = getRelativePoint(event, canvasMetrics);
       const stickyTarget = [...stickiesRef.current]
         .reverse()
@@ -2222,7 +2234,7 @@ export default function InkLayer({
 
     const onMove = (event: PointerLikeEvent) => {
       if (activeEraserPointerIdRef.current === event.pointerId) {
-        const canvasMetrics = getSurfaceMetrics(canvas);
+        const canvasMetrics = getCanvasHostMetrics(canvas);
         const point = getRelativePoint(event, canvasMetrics);
         eraseAtPoint(point);
         event.preventDefault();
@@ -2232,7 +2244,7 @@ export default function InkLayer({
 
       const activeShape = activeShapeRef.current;
       if (activeShape && activeShape.pointerId === event.pointerId) {
-        const canvasMetrics = getSurfaceMetrics(canvas);
+        const canvasMetrics = getCanvasHostMetrics(canvas);
         activeShape.current = getRelativePoint(event, canvasMetrics);
         redraw();
         event.preventDefault();
@@ -2247,7 +2259,7 @@ export default function InkLayer({
           return;
         }
 
-        const canvasMetrics = getSurfaceMetrics(canvas);
+        const canvasMetrics = getCanvasHostMetrics(canvas);
         const currentPoint = getRelativePoint(event, canvasMetrics);
         const deltaX = currentPoint.x - activeLassoDrag.lastPoint.x;
         const deltaY = currentPoint.y - activeLassoDrag.lastPoint.y;
@@ -2265,7 +2277,7 @@ export default function InkLayer({
 
       const activeLasso = activeLassoRef.current;
       if (activeLasso && activeLasso.pointerId === event.pointerId) {
-        const canvasMetrics = getSurfaceMetrics(canvas);
+        const canvasMetrics = getCanvasHostMetrics(canvas);
         const currentPoint = getRelativePoint(event, canvasMetrics);
         const lastPoint = activeLasso.points[activeLasso.points.length - 1];
         const deltaX = currentPoint.x - lastPoint.x;
@@ -2284,7 +2296,7 @@ export default function InkLayer({
         return;
       }
 
-      const canvasMetrics = getSurfaceMetrics(canvas);
+      const canvasMetrics = getCanvasHostMetrics(canvas);
       const latestPoint = getRelativePoint(event, canvasMetrics);
       const previousPoint =
         activeStroke.stroke.points[activeStroke.stroke.points.length - 1];
@@ -2849,7 +2861,7 @@ export default function InkLayer({
       return;
     }
 
-    const canvasMetrics = getSurfaceMetrics(canvas);
+    const canvasMetrics = getCanvasHostMetrics(canvas);
     let deltaX = 0;
     let deltaY = 0;
     const nextStickies = stickiesRef.current.map((sticky) => {
@@ -3037,7 +3049,7 @@ export default function InkLayer({
                     didSnapshotDuringDragRef.current = true;
                   }
 
-                  const canvasMetrics = getSurfaceMetrics(canvas);
+                  const canvasMetrics = getCanvasHostMetrics(canvas);
                   activeStickyDragRef.current = {
                     id: sticky.id,
                     pointerId: event.pointerId,
@@ -3068,7 +3080,7 @@ export default function InkLayer({
                     return;
                   }
 
-                  const canvasMetrics = getSurfaceMetrics(canvas);
+                  const canvasMetrics = getCanvasHostMetrics(canvas);
                   const nextX =
                     (event.clientX - canvasMetrics.rect.left) /
                       canvasMetrics.scaleX -
