@@ -175,6 +175,17 @@ function MonthTabs({
   onOpenMonthWeek,
   onOpenNotes,
 }: MonthTabsProps) {
+  const openMonth = (monthValue: number) => {
+    onOpenMonthWeek?.();
+    onMonthChange?.(monthValue);
+    updateHash(`#${getMonthWeekId(pageSet, monthValue, 0)}`);
+  };
+
+  const openNotes = () => {
+    onOpenNotes?.();
+    updateHash(`#${getNotesPageId(pageSet, activeMonth)}`);
+  };
+
   return (
     <div className={`month-tabs month-tabs-${side}`} aria-label="Month tabs">
       {MONTH_NAMES.map((name, index) => {
@@ -187,10 +198,14 @@ function MonthTabs({
             key={name}
             type="button"
             className={className}
+            onPointerDown={(event) => {
+              if (event.pointerType === "mouse") {
+                return;
+              }
+              openMonth(monthValue);
+            }}
             onClick={() => {
-              onOpenMonthWeek?.();
-              onMonthChange?.(monthValue);
-              updateHash(`#${getMonthWeekId(pageSet, monthValue, 0)}`);
+              openMonth(monthValue);
             }}
             aria-current={isActive ? "page" : undefined}
             title={`Go to ${name}`}
@@ -204,9 +219,14 @@ function MonthTabs({
         <button
           type="button"
           className="month-tab month-tab-notes"
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse") {
+              return;
+            }
+            openNotes();
+          }}
           onClick={() => {
-            onOpenNotes?.();
-            updateHash(`#${getNotesPageId(pageSet, activeMonth)}`);
+            openNotes();
           }}
           title="Go to notes"
         >
@@ -484,6 +504,11 @@ export default function MonthlyView({
     monthSwipeStartRef.current = null;
   };
 
+  const openPlanningPage = () => {
+    setActiveView("planning");
+    updateHash(`#${planningId}`);
+  };
+
   return (
     <div className="planner-previews">
       {showMonthWeek ? (
@@ -590,9 +615,14 @@ export default function MonthlyView({
             <button
               type="button"
               className="spread-link to-planning-link"
+              onPointerDown={(event) => {
+                if (event.pointerType === "mouse") {
+                  return;
+                }
+                openPlanningPage();
+              }}
               onClick={() => {
-                setActiveView("planning");
-                updateHash(`#${planningId}`);
+                openPlanningPage();
               }}
               title="Go to planning page"
             >
