@@ -908,11 +908,7 @@ export default function App() {
   const handleStylusUiPointerMoveCapture = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
       const pendingTap = stylusControlTapRef.current;
-      if (
-        !pendingTap ||
-        pendingTap.pointerId !== event.pointerId ||
-        !isLikelyStylusPointerEvent(event)
-      ) {
+      if (!pendingTap || pendingTap.pointerId !== event.pointerId) {
         return;
       }
 
@@ -930,11 +926,7 @@ export default function App() {
   const handleStylusUiPointerEndCapture = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
       const pendingTap = stylusControlTapRef.current;
-      if (
-        !pendingTap ||
-        pendingTap.pointerId !== event.pointerId ||
-        !isLikelyStylusPointerEvent(event)
-      ) {
+      if (!pendingTap || pendingTap.pointerId !== event.pointerId) {
         return;
       }
 
@@ -947,6 +939,17 @@ export default function App() {
       }
 
       tapTarget.click();
+    },
+    [],
+  );
+
+  const handleStylusUiPointerCancelCapture = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const pendingTap = stylusControlTapRef.current;
+      if (!pendingTap || pendingTap.pointerId !== event.pointerId) {
+        return;
+      }
+      stylusControlTapRef.current = null;
     },
     [],
   );
@@ -1420,7 +1423,7 @@ export default function App() {
       onPointerDownCapture={handleStylusUiPointerDownCapture}
       onPointerMoveCapture={handleStylusUiPointerMoveCapture}
       onPointerUpCapture={handleStylusUiPointerEndCapture}
-      onPointerCancelCapture={handleStylusUiPointerEndCapture}
+      onPointerCancelCapture={handleStylusUiPointerCancelCapture}
     >
       <header className="top-ink-toolbar" aria-label="Writing tools">
         <div className="top-toolbar-row">
