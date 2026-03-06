@@ -351,6 +351,8 @@ export default function MonthlyView({
     startX: number;
     startY: number;
   } | null>(null);
+  const monthTouchPointersRef = useRef<Set<number>>(new Set());
+  const monthSwipeBlockedByMultiTouchRef = useRef<boolean>(false);
 
   const weekTitle = formatWeekRange(selectedWeek);
 
@@ -492,6 +494,13 @@ export default function MonthlyView({
       }
     }
 
+    monthTouchPointersRef.current.add(event.pointerId);
+    if (monthTouchPointersRef.current.size > 1) {
+      monthSwipeBlockedByMultiTouchRef.current = true;
+      monthSwipeStartRef.current = null;
+      return;
+    }
+
     monthSwipeStartRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -500,6 +509,19 @@ export default function MonthlyView({
   };
 
   const handleMonthSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.pointerType === "touch") {
+      monthTouchPointersRef.current.delete(event.pointerId);
+    }
+
+    const blockedByMultiTouch = monthSwipeBlockedByMultiTouchRef.current;
+    if (monthTouchPointersRef.current.size === 0) {
+      monthSwipeBlockedByMultiTouchRef.current = false;
+    }
+    if (blockedByMultiTouch) {
+      monthSwipeStartRef.current = null;
+      return;
+    }
+
     const swipeStart = monthSwipeStartRef.current;
     if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
       return;
@@ -530,6 +552,8 @@ export default function MonthlyView({
 
   const clearMonthSwipe = () => {
     monthSwipeStartRef.current = null;
+    monthTouchPointersRef.current.clear();
+    monthSwipeBlockedByMultiTouchRef.current = false;
   };
 
   const openPlanningPage = () => {

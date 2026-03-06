@@ -682,6 +682,22 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const stage = plannerStageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const preventSelectStart = (event: Event) => {
+      event.preventDefault();
+    };
+
+    stage.addEventListener("selectstart", preventSelectStart);
+    return () => {
+      stage.removeEventListener("selectstart", preventSelectStart);
+    };
+  }, []);
+
   const handleMonthTabChange = (nextMonth: number) => {
     setMonth(nextMonth);
     setWeekIndex(0);
@@ -1002,6 +1018,10 @@ export default function App() {
       startTime: Date.now(),
     });
 
+    // Suppress iOS text/callout interactions on planner paper while preserving
+    // explicit interactive controls (handled by shouldSkipStageTouchTracking).
+    event.preventDefault();
+
     if (activeTouchPointsRef.current.size === 3) {
       const points = Array.from(activeTouchPointsRef.current.entries());
       const pointerIds = points.map(([pointerId]) => pointerId);
@@ -1063,6 +1083,9 @@ export default function App() {
       gestureMeta.currentX = event.clientX;
       gestureMeta.currentY = event.clientY;
     }
+
+    // Keep system selection/callout UI from interrupting in-progress writing.
+    event.preventDefault();
 
     const threeFingerTap = activeThreeFingerTapRef.current;
     if (threeFingerTap) {
@@ -1615,6 +1638,9 @@ export default function App() {
         <div
           ref={plannerStageRef}
           className="planner-stage"
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
           onPointerDownCapture={handleStagePointerDown}
           onPointerMoveCapture={handleStagePointerMove}
           onPointerUpCapture={clearStageTouch}

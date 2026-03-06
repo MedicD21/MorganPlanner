@@ -256,6 +256,15 @@
   place-items: center;
   overflow: visible;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.planner-stage * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .planner-zoom-surface {
