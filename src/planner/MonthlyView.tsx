@@ -266,6 +266,13 @@ function WeekTabs({
               key={`week-tab-${index}`}
               type="button"
               className={className}
+              onTouchStart={() => onWeekIndexChange(index)}
+              onPointerDown={(event) => {
+                if (event.pointerType === "mouse") {
+                  return;
+                }
+                onWeekIndexChange(index);
+              }}
               onClick={() => onWeekIndexChange(index)}
               aria-pressed={isActive}
               title={fullLabel}
@@ -433,6 +440,24 @@ export default function MonthlyView({
     };
   };
 
+  const navigateToWeek = (nextWeekIndex: number) => {
+    if (!onWeekIndexChange) {
+      return;
+    }
+
+    const clampedIndex = Math.max(
+      0,
+      Math.min(calendarData.weeks.length - 1, nextWeekIndex),
+    );
+    if (clampedIndex === safeWeekIndex) {
+      return;
+    }
+
+    setActiveView("month-week");
+    onWeekIndexChange(clampedIndex);
+    updateHash(`#${getMonthWeekId(pageSet, month, clampedIndex)}`);
+  };
+
   const handleWeekSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
     const swipeStart = weekSwipeStartRef.current;
     if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
@@ -444,15 +469,12 @@ export default function MonthlyView({
     const deltaX = event.clientX - swipeStart.startX;
     const deltaY = event.clientY - swipeStart.startY;
     const isHorizontalSwipe = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
-    if (!isHorizontalSwipe || !onWeekIndexChange) {
+    if (!isHorizontalSwipe) {
       return;
     }
 
     const nextIndex = deltaX < 0 ? safeWeekIndex + 1 : safeWeekIndex - 1;
-    const clampedIndex = Math.max(0, Math.min(calendarData.weeks.length - 1, nextIndex));
-    if (clampedIndex !== safeWeekIndex) {
-      onWeekIndexChange(clampedIndex);
-    }
+    navigateToWeek(nextIndex);
   };
 
   const clearWeekSwipe = () => {
@@ -616,7 +638,7 @@ export default function MonthlyView({
               activeWeekIndex={safeWeekIndex}
               month={month}
               pageSet={pageSet}
-              onWeekIndexChange={onWeekIndexChange}
+              onWeekIndexChange={navigateToWeek}
             />
             <a
               className="spread-link to-planning-link"

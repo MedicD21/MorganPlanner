@@ -1651,6 +1651,15 @@ export default function InkLayer({
     };
 
     const canDrawWithInput = (event: PointerLikeEvent) => {
+      if (
+        event.pointerType === "touch" &&
+        !event.isStylus &&
+        stylusPointerIdsRef.current.size > 0
+      ) {
+        // Palm rejection: ignore non-stylus touches while any stylus contact is active.
+        return false;
+      }
+
       if (event.isStylus) {
         return true;
       }
@@ -1963,7 +1972,17 @@ export default function InkLayer({
     };
 
     const onStart = (event: PointerLikeEvent) => {
-      if (!canDrawWithInput(event)) {
+      const canDraw = canDrawWithInput(event);
+      if (!canDraw) {
+        if (
+          event.pointerType === "touch" &&
+          !event.isStylus &&
+          stylusPointerIdsRef.current.size > 0
+        ) {
+          // Prevent accidental text selection while resting the palm.
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
 
@@ -2528,6 +2547,9 @@ export default function InkLayer({
           azimuthAngle?: number;
         };
         touchStylusByPointerIdRef.current.set(pointerId, isStylus);
+        if (isStylus) {
+          stylusPointerIdsRef.current.add(pointerId);
+        }
 
         const pointerEvent: PointerLikeEvent = {
           pointerId,

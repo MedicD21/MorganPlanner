@@ -572,6 +572,14 @@
   position: relative;
   overflow: hidden;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.planner-paper * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .ink-layer-root {
