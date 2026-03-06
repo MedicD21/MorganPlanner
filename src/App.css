@@ -898,14 +898,18 @@
 
 .spread-link {
   display: block;
+  width: 100%;
   text-align: center;
   text-decoration: none;
+  border: none;
   border-bottom: 1px solid #bcb3ad;
+  background: transparent;
   padding: 0.24rem 0.45rem 0.3rem;
   font-family: "Cormorant Garamond", "Palatino Linotype", serif;
   font-size: 1.04rem;
   font-style: italic;
   color: #2d2928;
+  cursor: pointer;
 }
 
 .spread-link:hover {

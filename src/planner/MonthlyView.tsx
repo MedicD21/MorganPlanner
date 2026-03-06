@@ -46,7 +46,7 @@ interface MiniCalendarProps {
 
 interface MonthTabsProps {
   activeMonth: number;
-  side: "left" | "right";
+  side: "right";
   pageSet: string;
   onMonthChange?: (month: number) => void;
   onOpenMonthWeek?: () => void;
@@ -182,41 +182,35 @@ function MonthTabs({
         const className = isActive ? "month-tab active" : "month-tab";
 
         return (
-          <a
+          <button
             key={name}
+            type="button"
             className={className}
-            href={`#${getMonthWeekId(pageSet, monthValue, 0)}`}
-            onClick={
-              onMonthChange
-                ? (event) => {
-                    event.preventDefault();
-                    onOpenMonthWeek?.();
-                    onMonthChange(monthValue);
-                    updateHash(`#${getMonthWeekId(pageSet, monthValue, 0)}`);
-                  }
-                : undefined
-            }
+            onClick={() => {
+              onOpenMonthWeek?.();
+              onMonthChange?.(monthValue);
+              updateHash(`#${getMonthWeekId(pageSet, monthValue, 0)}`);
+            }}
             aria-current={isActive ? "page" : undefined}
             title={`Go to ${name}`}
           >
             {name.slice(0, 3).toUpperCase()}
-          </a>
+          </button>
         );
       })}
 
       {side === "right" ? (
-        <a
+        <button
+          type="button"
           className="month-tab month-tab-notes"
-          href={`#${getNotesPageId(pageSet, activeMonth)}`}
-          onClick={(event) => {
-            event.preventDefault();
+          onClick={() => {
             onOpenNotes?.();
             updateHash(`#${getNotesPageId(pageSet, activeMonth)}`);
           }}
           title="Go to notes"
         >
           NOTES
-        </a>
+        </button>
       ) : null}
     </div>
   );
@@ -592,18 +586,17 @@ export default function MonthlyView({
               pageSet={pageSet}
               onWeekIndexChange={onWeekIndexChange}
             />
-            <a
+            <button
+              type="button"
               className="spread-link to-planning-link"
-              href={`#${planningId}`}
-              onClick={(event) => {
-                event.preventDefault();
+              onClick={() => {
                 setActiveView("planning");
                 updateHash(`#${planningId}`);
               }}
               title="Go to planning page"
             >
               to do page
-            </a>
+            </button>
             <div className="week-lines">{renderWeeklyRows(selectedWeek)}</div>
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-week-${safeWeekIndex}`}

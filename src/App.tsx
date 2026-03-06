@@ -388,15 +388,30 @@ function isLikelyStylusPointerEvent(
   return false;
 }
 
-function shouldSkipStageTouchTracking(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
+function getEventTargetElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) {
+    return target;
+  }
+  if (target instanceof Node) {
+    return target.parentElement;
+  }
+  return null;
+}
+
+function getClosestInteractiveControl(target: EventTarget | null): HTMLElement | null {
+  const element = getEventTargetElement(target);
+  if (!element) {
+    return null;
   }
 
-  return (
-    target.closest("a, button, input, select, label, textarea, [role='button']") !==
-    null
+  const closest = element.closest(
+    "button, a, input, select, label, textarea, [role='button']",
   );
+  return closest instanceof HTMLElement ? closest : null;
+}
+
+function shouldSkipStageTouchTracking(target: EventTarget | null): boolean {
+  return getClosestInteractiveControl(target) !== null;
 }
 
 function isDrawingTool(tool: InkTool): tool is DrawingTool {
@@ -803,14 +818,7 @@ export default function App() {
         return;
       }
 
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
-
-      const interactiveElement = target.closest<HTMLElement>(
-        "button, a, input, select, label, textarea, [role='button']",
-      );
+      const interactiveElement = getClosestInteractiveControl(event.target);
       if (!interactiveElement) {
         return;
       }
@@ -943,6 +951,35 @@ export default function App() {
     };
   };
 
+  const resetStageTouchState = useCallback(() => {
+    activeTouchPointsRef.current.clear();
+    touchGestureMetaRef.current.clear();
+    pinchGestureRef.current = null;
+    activeThreeFingerTapRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const handleInterrupt = () => {
+      resetStageTouchState();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        resetStageTouchState();
+      }
+    };
+
+    window.addEventListener("hashchange", handleInterrupt);
+    window.addEventListener("blur", handleInterrupt);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("hashchange", handleInterrupt);
+      window.removeEventListener("blur", handleInterrupt);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [resetStageTouchState]);
+
   const handleStagePointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
@@ -951,6 +988,7 @@ export default function App() {
     }
 
     if (shouldSkipStageTouchTracking(event.target)) {
+      resetStageTouchState();
       return;
     }
 
