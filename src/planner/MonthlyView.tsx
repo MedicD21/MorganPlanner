@@ -198,6 +198,9 @@ function MonthTabs({
             key={name}
             type="button"
             className={className}
+            onTouchStart={() => {
+              openMonth(monthValue);
+            }}
             onPointerDown={(event) => {
               if (event.pointerType === "mouse") {
                 return;
@@ -216,9 +219,12 @@ function MonthTabs({
       })}
 
       {side === "right" ? (
-        <button
-          type="button"
+        <a
           className="month-tab month-tab-notes"
+          href={`#${getNotesPageId(pageSet, activeMonth)}`}
+          onTouchStart={() => {
+            openNotes();
+          }}
           onPointerDown={(event) => {
             if (event.pointerType === "mouse") {
               return;
@@ -231,7 +237,7 @@ function MonthTabs({
           title="Go to notes"
         >
           NOTES
-        </button>
+        </a>
       ) : null}
     </div>
   );
@@ -612,9 +618,12 @@ export default function MonthlyView({
               pageSet={pageSet}
               onWeekIndexChange={onWeekIndexChange}
             />
-            <button
-              type="button"
+            <a
               className="spread-link to-planning-link"
+              href={`#${planningId}`}
+              onTouchStart={() => {
+                openPlanningPage();
+              }}
               onPointerDown={(event) => {
                 if (event.pointerType === "mouse") {
                   return;
@@ -627,7 +636,7 @@ export default function MonthlyView({
               title="Go to planning page"
             >
               to do page
-            </button>
+            </a>
             <div className="week-lines">{renderWeeklyRows(selectedWeek)}</div>
             <InkLayer
               pageId={`${pageSet}-ink-${year}-month-${month}-week-${safeWeekIndex}`}
