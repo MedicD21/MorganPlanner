@@ -98,11 +98,12 @@ function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boo
 }
 
 function updateHash(hashValue: string): void {
-  if (window.location.hash === hashValue) {
+  const normalizedHash = hashValue.startsWith("#") ? hashValue : `#${hashValue}`;
+  if (window.location.hash === normalizedHash) {
     return;
   }
 
-  window.history.pushState(null, "", hashValue);
+  window.location.hash = normalizedHash;
 }
 
 function getMonthWeekId(

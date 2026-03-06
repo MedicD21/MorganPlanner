@@ -151,6 +151,13 @@ interface PlannerHistoryEventDetail {
   targetPageId: string | null;
 }
 
+interface StylusControlTapCandidate {
+  pointerId: number;
+  target: HTMLElement;
+  startX: number;
+  startY: number;
+}
+
 const TOOL_LABELS: Record<InkTool, string> = {
   pen: "Pen",
   pencil: "Pencil",
@@ -548,6 +555,7 @@ export default function App() {
     time: number;
   } | null>(null);
   const lastPencilToolbarTapRef = useRef<number>(0);
+  const stylusControlTapRef = useRef<StylusControlTapCandidate | null>(null);
   const zoomScaleRef = useRef<number>(1);
   const zoomOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -873,14 +881,72 @@ export default function App() {
 
       if (interactiveElement instanceof HTMLButtonElement) {
         event.preventDefault();
-        interactiveElement.click();
+        interactiveElement.focus();
+        stylusControlTapRef.current = {
+          pointerId: event.pointerId,
+          target: interactiveElement,
+          startX: event.clientX,
+          startY: event.clientY,
+        };
         return;
       }
 
       if (interactiveElement instanceof HTMLAnchorElement) {
-        // Let anchor taps follow native navigation/click behavior.
+        event.preventDefault();
         interactiveElement.focus();
+        stylusControlTapRef.current = {
+          pointerId: event.pointerId,
+          target: interactiveElement,
+          startX: event.clientX,
+          startY: event.clientY,
+        };
       }
+    },
+    [],
+  );
+
+  const handleStylusUiPointerMoveCapture = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const pendingTap = stylusControlTapRef.current;
+      if (
+        !pendingTap ||
+        pendingTap.pointerId !== event.pointerId ||
+        !isLikelyStylusPointerEvent(event)
+      ) {
+        return;
+      }
+
+      const moveDistance = Math.hypot(
+        event.clientX - pendingTap.startX,
+        event.clientY - pendingTap.startY,
+      );
+      if (moveDistance > 10) {
+        stylusControlTapRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const handleStylusUiPointerEndCapture = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const pendingTap = stylusControlTapRef.current;
+      if (
+        !pendingTap ||
+        pendingTap.pointerId !== event.pointerId ||
+        !isLikelyStylusPointerEvent(event)
+      ) {
+        return;
+      }
+
+      stylusControlTapRef.current = null;
+      const tapTarget = pendingTap.target as
+        | (HTMLElement & { disabled?: boolean })
+        | null;
+      if (!tapTarget || !tapTarget.isConnected || tapTarget.disabled === true) {
+        return;
+      }
+
+      tapTarget.click();
     },
     [],
   );
@@ -1349,7 +1415,13 @@ export default function App() {
         : null;
 
   return (
-    <main className="app-shell" onPointerDownCapture={handleStylusUiPointerDownCapture}>
+    <main
+      className="app-shell"
+      onPointerDownCapture={handleStylusUiPointerDownCapture}
+      onPointerMoveCapture={handleStylusUiPointerMoveCapture}
+      onPointerUpCapture={handleStylusUiPointerEndCapture}
+      onPointerCancelCapture={handleStylusUiPointerEndCapture}
+    >
       <header className="top-ink-toolbar" aria-label="Writing tools">
         <div className="top-toolbar-row">
           <div className="top-toolbar-group">
