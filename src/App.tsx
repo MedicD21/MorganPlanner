@@ -39,6 +39,7 @@ const THREE_FINGER_MAX_MOVE = 26;
 const PLANNER_UNDO_EVENT = "planner-undo";
 const PLANNER_REDO_EVENT = "planner-redo";
 const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
+const ACTIVE_STAGE_TOUCH_COUNT_KEY = "__plannerActiveStageTouchCount";
 
 interface ApplePencilTapEvent {
   timestamp: number;
@@ -527,6 +528,7 @@ export default function App() {
     x: 0,
     y: 0,
   });
+  const [activeStageTouchCount, setActiveStageTouchCount] = useState<number>(0);
   const [imageStampSrc, setImageStampSrc] = useState<string | null>(null);
   const [favoriteColors, setFavoriteColors] = useState<string[]>(
     loadFavoriteColors,
@@ -965,11 +967,32 @@ export default function App() {
     };
   };
 
+  const syncActiveStageTouchCount = useCallback(() => {
+    const nextCount = activeTouchPointsRef.current.size;
+    (window as Window & { __plannerActiveStageTouchCount?: number })[
+      ACTIVE_STAGE_TOUCH_COUNT_KEY
+    ] = nextCount;
+    setActiveStageTouchCount((currentCount) =>
+      currentCount === nextCount ? currentCount : nextCount,
+    );
+  }, []);
+
+  const clearBrowserSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      selection.removeAllRanges();
+    }
+  }, []);
+
   const resetStageTouchState = useCallback(() => {
     activeTouchPointsRef.current.clear();
     touchGestureMetaRef.current.clear();
     pinchGestureRef.current = null;
     activeThreeFingerTapRef.current = null;
+    (window as Window & { __plannerActiveStageTouchCount?: number })[
+      ACTIVE_STAGE_TOUCH_COUNT_KEY
+    ] = 0;
+    setActiveStageTouchCount(0);
   }, []);
 
   useEffect(() => {
@@ -997,7 +1020,16 @@ export default function App() {
   const handleStagePointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
-    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
+    const isStylusInput = isLikelyStylusPointerEvent(event);
+    if (isStylusInput) {
+      if (!shouldSkipStageTouchTracking(event.target)) {
+        event.preventDefault();
+        clearBrowserSelection();
+      }
+      return;
+    }
+
+    if (event.pointerType !== "touch") {
       return;
     }
 
@@ -1017,10 +1049,12 @@ export default function App() {
       currentY: event.clientY,
       startTime: Date.now(),
     });
+    syncActiveStageTouchCount();
 
     // Suppress iOS text/callout interactions on planner paper while preserving
     // explicit interactive controls (handled by shouldSkipStageTouchTracking).
     event.preventDefault();
+    clearBrowserSelection();
 
     if (activeTouchPointsRef.current.size === 3) {
       const points = Array.from(activeTouchPointsRef.current.entries());
@@ -1066,9 +1100,17 @@ export default function App() {
   const handleStagePointerMove = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
+    const isStylusInput = isLikelyStylusPointerEvent(event);
+    if (isStylusInput) {
+      if (!shouldSkipStageTouchTracking(event.target)) {
+        event.preventDefault();
+        clearBrowserSelection();
+      }
+      return;
+    }
+
     if (
       event.pointerType !== "touch" ||
-      isLikelyStylusPointerEvent(event) ||
       !activeTouchPointsRef.current.has(event.pointerId)
     ) {
       return;
@@ -1086,6 +1128,7 @@ export default function App() {
 
     // Keep system selection/callout UI from interrupting in-progress writing.
     event.preventDefault();
+    clearBrowserSelection();
 
     const threeFingerTap = activeThreeFingerTapRef.current;
     if (threeFingerTap) {
@@ -1160,7 +1203,16 @@ export default function App() {
   };
 
   const clearStageTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
+    const isStylusInput = isLikelyStylusPointerEvent(event);
+    if (isStylusInput) {
+      if (!shouldSkipStageTouchTracking(event.target)) {
+        event.preventDefault();
+      }
+      clearBrowserSelection();
+      return;
+    }
+
+    if (event.pointerType !== "touch") {
       return;
     }
 
@@ -1180,6 +1232,7 @@ export default function App() {
     if (activeTouchPointsRef.current.size === 0) {
       touchGestureMetaRef.current.clear();
     }
+    syncActiveStageTouchCount();
     if (activeTouchPointsRef.current.size < 2) {
       pinchGestureRef.current = null;
     }
@@ -1641,6 +1694,12 @@ export default function App() {
           onContextMenu={(event) => {
             event.preventDefault();
           }}
+          onDragStartCapture={(event) => {
+            if (shouldSkipStageTouchTracking(event.target)) {
+              return;
+            }
+            event.preventDefault();
+          }}
           onPointerDownCapture={handleStagePointerDown}
           onPointerMoveCapture={handleStagePointerMove}
           onPointerUpCapture={clearStageTouch}
@@ -1667,6 +1726,7 @@ export default function App() {
               inkShapeKind={shapeKind}
               inkImageSrc={activeTool === "image" ? imageStampSrc : null}
               inkEraseRadius={eraseRadius}
+              activeTouchCount={activeStageTouchCount}
               onMonthChange={handleMonthTabChange}
               onWeekIndexChange={handleWeekTabChange}
             />

@@ -34,6 +34,7 @@ interface MonthlyViewProps {
   inkShapeKind?: "line" | "rectangle" | "ellipse" | "triangle";
   inkImageSrc?: string | null;
   inkEraseRadius?: number;
+  activeTouchCount?: number;
   onInkInputType?: (inputType: InkInputType) => void;
   onMonthChange?: (month: number) => void;
   onWeekIndexChange?: (weekIndex: number) => void;
@@ -104,6 +105,17 @@ function updateHash(hashValue: string): void {
   }
 
   window.location.hash = normalizedHash;
+}
+
+function getGlobalActiveStageTouchCount(): number {
+  const plannerWindow = window as Window & {
+    __plannerActiveStageTouchCount?: number;
+  };
+  const count = plannerWindow.__plannerActiveStageTouchCount;
+  if (typeof count !== "number" || !Number.isFinite(count)) {
+    return 0;
+  }
+  return Math.max(0, count);
 }
 
 function getMonthWeekId(
@@ -326,6 +338,7 @@ export default function MonthlyView({
   inkShapeKind = "line",
   inkImageSrc = null,
   inkEraseRadius = 14,
+  activeTouchCount = 0,
   onInkInputType,
   onMonthChange,
   onWeekIndexChange,
@@ -422,6 +435,18 @@ export default function MonthlyView({
     safeWeekIndex,
   ]);
 
+  useEffect(() => {
+    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+      monthSwipeBlockedByMultiTouchRef.current = true;
+      monthSwipeStartRef.current = null;
+      return;
+    }
+
+    if (activeTouchCount === 0 && monthTouchPointersRef.current.size === 0) {
+      monthSwipeBlockedByMultiTouchRef.current = false;
+    }
+  }, [activeTouchCount]);
+
   if (!showMonthWeek && !showNotes) {
     return null;
   }
@@ -488,6 +513,12 @@ export default function MonthlyView({
       return;
     }
 
+    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+      monthSwipeBlockedByMultiTouchRef.current = true;
+      monthSwipeStartRef.current = null;
+      return;
+    }
+
     if (event.target instanceof HTMLElement) {
       if (event.target.closest("a, button")) {
         return;
@@ -509,6 +540,12 @@ export default function MonthlyView({
   };
 
   const handleMonthSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
+    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+      monthSwipeBlockedByMultiTouchRef.current = true;
+      monthSwipeStartRef.current = null;
+      return;
+    }
+
     if (event.pointerType === "touch") {
       monthTouchPointersRef.current.delete(event.pointerId);
     }
@@ -571,8 +608,18 @@ export default function MonthlyView({
           <article
             className="planner-paper month-paper"
             onPointerDown={handleMonthSwipeStart}
+            onPointerMove={(event) => {
+              if (
+                event.pointerType === "touch" &&
+                Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1
+              ) {
+                monthSwipeBlockedByMultiTouchRef.current = true;
+                monthSwipeStartRef.current = null;
+              }
+            }}
             onPointerUp={handleMonthSwipeEnd}
             onPointerCancel={clearMonthSwipe}
+            onPointerLeave={clearMonthSwipe}
           >
             <header className="month-header">
               <div className="month-number">{month}</div>
