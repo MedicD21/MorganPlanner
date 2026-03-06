@@ -361,6 +361,28 @@ function isLikelyStylusPointer(event: PointerEvent): boolean {
   return false;
 }
 
+function getEventTargetElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) {
+    return target;
+  }
+  if (target instanceof Node) {
+    return target.parentElement;
+  }
+  return null;
+}
+
+function shouldSuppressSystemTouchUi(target: EventTarget | null): boolean {
+  const element = getEventTargetElement(target);
+  if (!element) {
+    return true;
+  }
+
+  const interactiveControl = element.closest(
+    "button, a, input, select, label, textarea, [role='button']",
+  );
+  return interactiveControl === null;
+}
+
 function storageKey(pageId: string): string {
   return `${STORAGE_PREFIX}:${pageId}`;
 }
@@ -1619,6 +1641,13 @@ export default function InkLayer({
       redraw();
     };
 
+    const clearDocumentSelection = () => {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        selection.removeAllRanges();
+      }
+    };
+
     const drawStrokeSegment = (stroke: InkStroke) => {
       if (stroke.points.length < 2) {
         return;
@@ -2420,6 +2449,13 @@ export default function InkLayer({
       if (stylus) {
         stylusPointerIdsRef.current.add(event.pointerId);
       }
+      const suppressSystemUi =
+        shouldSuppressSystemTouchUi(event.target) &&
+        (stylus || event.pointerType === "touch" || event.pointerType === "pen");
+      if (suppressSystemUi) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
 
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
@@ -2464,6 +2500,13 @@ export default function InkLayer({
 
     const onPointerMove = (event: PointerEvent) => {
       const stylus = stylusPointerIdsRef.current.has(event.pointerId);
+      const suppressSystemUi =
+        shouldSuppressSystemTouchUi(event.target) &&
+        (stylus || event.pointerType === "touch" || event.pointerType === "pen");
+      if (suppressSystemUi) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
         pointerType: stylus ? "pen" : normalizeInputType(event.pointerType),
@@ -2496,6 +2539,13 @@ export default function InkLayer({
 
     const finalizePointer = (event: PointerEvent) => {
       const stylus = stylusPointerIdsRef.current.has(event.pointerId);
+      const suppressSystemUi =
+        shouldSuppressSystemTouchUi(event.target) &&
+        (stylus || event.pointerType === "touch" || event.pointerType === "pen");
+      if (suppressSystemUi) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
       const pointerEvent: PointerLikeEvent = {
         pointerId: event.pointerId,
         pointerType: stylus ? "pen" : normalizeInputType(event.pointerType),
@@ -2533,6 +2583,10 @@ export default function InkLayer({
     };
 
     const onTouchStart = (event: TouchEvent) => {
+      if (shouldSuppressSystemTouchUi(event.target)) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
       for (const touch of Array.from(event.changedTouches)) {
         let pointerId = pointerFromTouchIdRef.current.get(touch.identifier);
         if (!pointerId) {
@@ -2581,6 +2635,10 @@ export default function InkLayer({
     };
 
     const onTouchMove = (event: TouchEvent) => {
+      if (shouldSuppressSystemTouchUi(event.target)) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
       for (const touch of Array.from(event.changedTouches)) {
         const pointerId = pointerFromTouchIdRef.current.get(touch.identifier);
         if (!pointerId) {
@@ -2622,6 +2680,10 @@ export default function InkLayer({
     };
 
     const onTouchEnd = (event: TouchEvent) => {
+      if (shouldSuppressSystemTouchUi(event.target)) {
+        event.preventDefault();
+        clearDocumentSelection();
+      }
       for (const touch of Array.from(event.changedTouches)) {
         const pointerId = pointerFromTouchIdRef.current.get(touch.identifier);
         if (!pointerId) {

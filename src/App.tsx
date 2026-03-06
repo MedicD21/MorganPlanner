@@ -984,6 +984,39 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const plannerContainsNode = (node: Node | null): boolean => {
+      const stage = plannerStageRef.current;
+      if (!stage || !node) {
+        return false;
+      }
+      if (node instanceof Element) {
+        return stage.contains(node);
+      }
+      return stage.contains(node.parentElement);
+    };
+
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+
+      const anchorInPlanner = plannerContainsNode(selection.anchorNode);
+      const focusInPlanner = plannerContainsNode(selection.focusNode);
+      if (!anchorInPlanner && !focusInPlanner) {
+        return;
+      }
+
+      selection.removeAllRanges();
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, []);
+
   const resetStageTouchState = useCallback(() => {
     activeTouchPointsRef.current.clear();
     touchGestureMetaRef.current.clear();
@@ -1214,6 +1247,12 @@ export default function App() {
 
     if (event.pointerType !== "touch") {
       return;
+    }
+
+    const hadTrackedTouch = activeTouchPointsRef.current.has(event.pointerId);
+    if (hadTrackedTouch) {
+      event.preventDefault();
+      clearBrowserSelection();
     }
 
     const touchMeta = touchGestureMetaRef.current.get(event.pointerId);
