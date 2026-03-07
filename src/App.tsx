@@ -524,7 +524,7 @@ function makeFavoriteStyle(
 export default function App() {
   const [month, setMonth] = useState<number>(DEFAULT_MONTH);
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX);
-  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(true);
+  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(false);
   const [activeTool, setActiveTool] = useState<InkTool>("pen");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
