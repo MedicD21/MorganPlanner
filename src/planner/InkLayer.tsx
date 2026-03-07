@@ -1452,6 +1452,18 @@ export default function InkLayer({
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
       ctx.clearRect(0, 0, metrics.width, metrics.height);
 
+      const collapsedNotes = stickiesRef.current.filter((s) => s.collapsed);
+      const hasCollapsed = collapsedNotes.length > 0;
+      if (hasCollapsed) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, metrics.width, metrics.height);
+        for (const note of collapsedNotes) {
+          ctx.rect(note.x, note.y, note.width, note.height);
+        }
+        ctx.clip("evenodd");
+      }
+
       for (const fill of fillsRef.current) {
         drawWithClip(ctx, fill.clipRect, () => {
           ctx.fillStyle = fill.color;
@@ -1632,6 +1644,10 @@ export default function InkLayer({
           selection.bounds.width,
           selection.bounds.height,
         );
+        ctx.restore();
+      }
+
+      if (hasCollapsed) {
         ctx.restore();
       }
     };
