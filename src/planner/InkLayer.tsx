@@ -2399,9 +2399,11 @@ export default function InkLayer({
         pressure:
           alpha * latestPoint.pressure + (1 - alpha) * previousPoint.pressure,
         tiltX:
-          alpha * latestPoint.tiltX + (1 - alpha) * (previousPoint.tiltX ?? 0),
+          alpha * (latestPoint.tiltX ?? 0) +
+          (1 - alpha) * (previousPoint.tiltX ?? 0),
         tiltY:
-          alpha * latestPoint.tiltY + (1 - alpha) * (previousPoint.tiltY ?? 0),
+          alpha * (latestPoint.tiltY ?? 0) +
+          (1 - alpha) * (previousPoint.tiltY ?? 0),
         altitudeAngle:
           latestPoint.altitudeAngle !== undefined &&
           previousPoint.altitudeAngle !== undefined
