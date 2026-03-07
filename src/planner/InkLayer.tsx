@@ -2875,6 +2875,23 @@ export default function InkLayer({
       surface.addEventListener("touchend", onTouchEnd, { passive: false });
       surface.addEventListener("touchcancel", onTouchEnd, { passive: false });
     }
+    const onContextMenu = (event: Event) => {
+      event.preventDefault();
+    };
+    const onSelectStart = (event: Event) => {
+      event.preventDefault();
+    };
+    const onDocumentContextMenu = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        surface.contains(event.target)
+      ) {
+        event.preventDefault();
+      }
+    };
+    document.addEventListener("contextmenu", onDocumentContextMenu, { capture: true });
+    surface.addEventListener("contextmenu", onContextMenu);
+    surface.addEventListener("selectstart", onSelectStart);
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener(PLANNER_UNDO_EVENT, onUndoEvent);
     window.addEventListener(PLANNER_REDO_EVENT, onRedoEvent);
@@ -2894,6 +2911,9 @@ export default function InkLayer({
         surface.removeEventListener("touchend", onTouchEnd);
         surface.removeEventListener("touchcancel", onTouchEnd);
       }
+      surface.removeEventListener("contextmenu", onContextMenu);
+      surface.removeEventListener("selectstart", onSelectStart);
+      document.removeEventListener("contextmenu", onDocumentContextMenu, { capture: true });
       window.removeEventListener("resize", resizeCanvas);
       window.removeEventListener(PLANNER_UNDO_EVENT, onUndoEvent);
       window.removeEventListener(PLANNER_REDO_EVENT, onRedoEvent);
