@@ -101,15 +101,15 @@ class PlannerBridgeViewController: CAPBridgeViewController {
             meta.content = 'telephone=no, date=no, address=no, email=no, url=no';
             document.documentElement.appendChild(meta);
 
-            // --- Block palm touches while Apple Pencil is active ---
-            // InkLayer already blocks touches on the canvas surface, but a palm
-            // landing anywhere else (toolbar, calendar headers, gutters) falls
-            // through to WKWebView's native long-press / text selection.
-            // This global handler prevents that regardless of where the touch lands.
+            // --- Block palm touches OUTSIDE the drawing stage while Pencil is active ---
+            // InkLayer handles palm rejection inside .planner-stage. Touches that
+            // land on the toolbar or other areas outside .planner-stage have no
+            // protection; this handler covers that gap.
+            // We scope to elements outside .planner-stage so that gestures inside
+            // the stage (month swipe, pinch zoom) are unaffected.
             var activePenPointers = new Set();
             document.addEventListener('pointerdown', function(e) {
-                // pressure > 0 filters out Apple Pencil hover events (which fire
-                // pointerdown with pressure 0 on Pencil Pro / iOS 26 hover).
+                // pressure > 0 filters out Apple Pencil hover events.
                 if (e.pointerType === 'pen' && e.pressure > 0) activePenPointers.add(e.pointerId);
             }, { capture: true });
             document.addEventListener('pointerup', function(e) {
@@ -119,7 +119,10 @@ class PlannerBridgeViewController: CAPBridgeViewController {
                 activePenPointers.delete(e.pointerId);
             }, { capture: true });
             document.addEventListener('touchstart', function(e) {
-                if (activePenPointers.size > 0) { e.preventDefault(); }
+                if (activePenPointers.size === 0) return;
+                var t = e.target;
+                if (t && typeof t.closest === 'function' && t.closest('.planner-stage')) return;
+                e.preventDefault();
             }, { capture: true, passive: false });
 
             // --- CSS: nothing is selectable, data-detector links are inert ---
