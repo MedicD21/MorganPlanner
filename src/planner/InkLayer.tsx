@@ -16,6 +16,7 @@ interface InkLayerProps {
   pageId: string;
   allowTouch?: boolean;
   onInputType?: (inputType: InkInputType) => void;
+  onStickyNoteCreated?: () => void;
   color?: string;
   lineWidth?: number;
   opacity?: number;
@@ -1242,6 +1243,7 @@ export default function InkLayer({
   pageId,
   allowTouch = false,
   onInputType,
+  onStickyNoteCreated,
   color = "#2f2b2a",
   lineWidth = 1.7,
   opacity = 1,
@@ -1282,6 +1284,7 @@ export default function InkLayer({
   const runtimeConfigRef = useRef({
     allowTouch,
     onInputType,
+    onStickyNoteCreated,
     color,
     lineWidth,
     opacity,
@@ -1298,6 +1301,7 @@ export default function InkLayer({
     runtimeConfigRef.current = {
       allowTouch,
       onInputType,
+      onStickyNoteCreated,
       color,
       lineWidth,
       opacity,
@@ -1318,6 +1322,7 @@ export default function InkLayer({
     lockToCells,
     mode,
     onInputType,
+    onStickyNoteCreated,
     opacity,
     shapeKind,
     symbol,
@@ -2238,6 +2243,7 @@ export default function InkLayer({
         const nextStickies = [...stickiesRef.current, nextSticky];
         stickiesRef.current = nextStickies;
         setStickyNotes(nextStickies);
+        runtimeConfig.onStickyNoteCreated?.();
         persistInk();
         event.preventDefault();
         maybeStopPropagation(event);

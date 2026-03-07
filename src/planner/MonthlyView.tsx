@@ -36,6 +36,7 @@ interface MonthlyViewProps {
   inkEraseRadius?: number;
   activeTouchCount?: number;
   onInkInputType?: (inputType: InkInputType) => void;
+  onStickyNoteCreated?: () => void;
   onMonthChange?: (month: number) => void;
   onWeekIndexChange?: (weekIndex: number) => void;
 }
@@ -349,6 +350,7 @@ export default function MonthlyView({
   inkEraseRadius = 14,
   activeTouchCount = 0,
   onInkInputType,
+  onStickyNoteCreated,
   onMonthChange,
   onWeekIndexChange,
 }: MonthlyViewProps) {
@@ -691,6 +693,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
 
@@ -753,6 +756,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
         </section>
@@ -796,6 +800,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
 
@@ -831,6 +836,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
         </section>
@@ -867,6 +873,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
 
@@ -898,6 +905,7 @@ export default function MonthlyView({
               imageSrc={inkImageSrc}
               eraseRadius={inkEraseRadius}
               onInputType={onInkInputType}
+              onStickyNoteCreated={onStickyNoteCreated}
             />
           </article>
         </section>

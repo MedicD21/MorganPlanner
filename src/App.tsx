@@ -550,6 +550,7 @@ export default function App() {
   const zoomSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastNonEraserToolRef = useRef<InkTool>("pen");
   const preferredPencilActionRef = useRef<string>("switchEraser");
+  const lastDrawingToolRef = useRef<InkTool>("pen");
   const activeTouchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
   const touchGestureMetaRef = useRef<Map<number, TouchGestureMeta>>(new Map());
   const pinchGestureRef = useRef<PinchGestureState | null>(null);
@@ -649,6 +650,14 @@ export default function App() {
     if (activeTool !== "eraser") {
       lastNonEraserToolRef.current = activeTool;
     }
+    if (
+      activeTool === "pen" ||
+      activeTool === "pencil" ||
+      activeTool === "highlighter" ||
+      activeTool === "shape"
+    ) {
+      lastDrawingToolRef.current = activeTool;
+    }
   }, [activeTool]);
 
   useEffect(() => {
@@ -732,6 +741,10 @@ export default function App() {
       setActiveSymbol("");
     }
   };
+
+  const handleStickyNoteCreated = useCallback(() => {
+    setActiveTool(lastDrawingToolRef.current);
+  }, []);
 
   const toggleEraserFromPencilDoubleTap = useCallback(() => {
     setActiveTool((currentTool) => {
@@ -1833,6 +1846,7 @@ export default function App() {
               activeTouchCount={activeStageTouchCount}
               onMonthChange={handleMonthTabChange}
               onWeekIndexChange={handleWeekTabChange}
+              onStickyNoteCreated={handleStickyNoteCreated}
             />
           </div>
         </div>
