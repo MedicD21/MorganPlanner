@@ -295,22 +295,22 @@ function tipTiltFactor(
   }
 
   if (tip === "fine") {
-    return 1 + tilt * 0.16;
+    return 1 + tilt * 0.35;
   }
 
   if (tip === "fountain") {
-    return 1 + tilt * 0.22;
+    return 1 + tilt * 0.50;
   }
 
   if (tip === "marker") {
-    return 1 + tilt * 0.3;
+    return 1 + tilt * 0.55;
   }
 
   if (tip === "chisel") {
-    return 1 + tilt * 0.44;
+    return 1 + tilt * 0.70;
   }
 
-  return 1 + tilt * 0.24;
+  return 1 + tilt * 0.45;
 }
 
 function strokeSegmentWidth(
