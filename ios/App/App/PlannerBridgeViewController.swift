@@ -10,8 +10,18 @@ class PlannerBridgeViewController: CAPBridgeViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if let webView = bridge?.webView {
-            suppressEditMenuInHierarchy(webView)
+        // Suppress immediately, then re-suppress after page load completes.
+        // WKWebView adds gesture recognizers lazily as content renders, so
+        // a single call at viewDidAppear misses recognizers added later.
+        suppressAfterDelay(0)
+        suppressAfterDelay(500)
+        suppressAfterDelay(2000)
+    }
+
+    private func suppressAfterDelay(_ ms: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms)) { [weak self] in
+            guard let webView = self?.bridge?.webView else { return }
+            self?.suppressEditMenuInHierarchy(webView)
         }
     }
 
@@ -34,6 +44,16 @@ class PlannerBridgeViewController: CAPBridgeViewController {
         for subview in view.subviews {
             suppressEditMenuInHierarchy(subview)
         }
+    }
+
+    // Suppress WKWebView's context menu (long-press on links/images shows
+    // Copy/Look Up/Translate). Return nil to cancel the menu entirely.
+    func webView(
+        _ webView: WKWebView,
+        contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+        completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
+    ) {
+        completionHandler(nil)
     }
 
     private func configureWebView() {
