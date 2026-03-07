@@ -20,6 +20,7 @@ const FAVORITE_COLOR_LIMIT = 12;
 const FAVORITE_STYLE_LIMIT = 8;
 const FAVORITE_COLORS_STORAGE_KEY = "planner-favorite-colors-v1";
 const FAVORITE_STYLES_STORAGE_KEY = "planner-favorite-styles-v1";
+const ALLOW_TOUCH_INK_STORAGE_KEY = "planner-allow-touch-ink-v1";
 const DEFAULT_COLOR_PALETTE = [
   "#2f2b2a",
   "#1f3a64",
@@ -524,7 +525,9 @@ function makeFavoriteStyle(
 export default function App() {
   const [month, setMonth] = useState<number>(DEFAULT_MONTH);
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX);
-  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(false);
+  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(() =>
+    readStorage<boolean>(ALLOW_TOUCH_INK_STORAGE_KEY, false),
+  );
   const [activeTool, setActiveTool] = useState<InkTool>("pen");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
@@ -645,6 +648,14 @@ export default function App() {
       // Ignore storage write failures.
     }
   }, [favoriteStyles]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ALLOW_TOUCH_INK_STORAGE_KEY, JSON.stringify(allowTouchInk));
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [allowTouchInk]);
 
   useEffect(() => {
     if (activeTool !== "eraser") {
