@@ -296,22 +296,22 @@ function tipTiltFactor(
   }
 
   if (tip === "fine") {
-    return 1 + tilt * 0.35;
+    return 1 + tilt * 0.16;
   }
 
   if (tip === "fountain") {
-    return 1 + tilt * 0.50;
+    return 1 + tilt * 0.22;
   }
 
   if (tip === "marker") {
-    return 1 + tilt * 0.55;
+    return 1 + tilt * 0.30;
   }
 
   if (tip === "chisel") {
-    return 1 + tilt * 0.70;
+    return 1 + tilt * 0.44;
   }
 
-  return 1 + tilt * 0.45;
+  return 1 + tilt * 0.24;
 }
 
 function strokeSegmentWidth(
@@ -2393,7 +2393,23 @@ export default function InkLayer({
         activeStroke.stroke.points[activeStroke.stroke.points.length - 1];
       const movementX = latestPoint.x - previousPoint.x;
       const movementY = latestPoint.y - previousPoint.y;
-      activeStroke.stroke.points.push(latestPoint);
+      const alpha = 0.35;
+      const smoothedPoint: InkPoint = {
+        ...latestPoint,
+        pressure:
+          alpha * latestPoint.pressure + (1 - alpha) * previousPoint.pressure,
+        tiltX:
+          alpha * latestPoint.tiltX + (1 - alpha) * (previousPoint.tiltX ?? 0),
+        tiltY:
+          alpha * latestPoint.tiltY + (1 - alpha) * (previousPoint.tiltY ?? 0),
+        altitudeAngle:
+          latestPoint.altitudeAngle !== undefined &&
+          previousPoint.altitudeAngle !== undefined
+            ? alpha * latestPoint.altitudeAngle +
+              (1 - alpha) * previousPoint.altitudeAngle
+            : latestPoint.altitudeAngle,
+      };
+      activeStroke.stroke.points.push(smoothedPoint);
       if (movementX * movementX + movementY * movementY >= 16) {
         activeStroke.lastMoveTime = Date.now();
       }

@@ -14,6 +14,11 @@ class PlannerBridgeViewController: CAPBridgeViewController {
         // Disable link preview long-press (suppresses callout on links/images)
         webView.allowsLinkPreview = false
 
+        // Disable native iOS text interaction (Copy/Look Up/Translate popup).
+        // textInteractionEnabled is a public property since iOS 14.5 but the
+        // Xcode SDK spelling can vary; KVC sets it reliably at runtime.
+        webView.setValue(false, forKey: "textInteractionEnabled")
+
         // Inject contextmenu + selectstart suppression before any page JS runs
         let script = """
         (function() {
