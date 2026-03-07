@@ -340,30 +340,6 @@ function isLikelyStylusPointer(event: PointerEvent): boolean {
   if (event.pointerType === "pen" || pointerWithTouchType.touchType === "stylus") {
     return true;
   }
-
-  const hasStylusAngles =
-    (Number.isFinite(event.altitudeAngle) &&
-      Math.abs(event.altitudeAngle ?? 0) > 0.0001) ||
-    (Number.isFinite(event.azimuthAngle) &&
-      Math.abs(event.azimuthAngle ?? 0) > 0.0001);
-  if (hasStylusAngles && event.pressure > 0) {
-    return true;
-  }
-
-  if (event.pointerType !== "touch") {
-    return false;
-  }
-
-  if (
-    event.width > 0 &&
-    event.height > 0 &&
-    event.width <= 6 &&
-    event.height <= 6 &&
-    event.pressure > 0
-  ) {
-    return true;
-  }
-
   return false;
 }
 
@@ -1706,14 +1682,7 @@ export default function InkLayer({
     };
 
     const canDrawWithInput = (event: PointerLikeEvent) => {
-      const hasStylusAngles =
-        (Number.isFinite(event.altitudeAngle) &&
-          Math.abs(event.altitudeAngle ?? 0) > 0.0001) ||
-        (Number.isFinite(event.azimuthAngle) &&
-          Math.abs(event.azimuthAngle ?? 0) > 0.0001);
-      const isStylusLikeTouch =
-        event.pointerType === "touch" &&
-        (event.isStylus || hasStylusAngles);
+      const isStylusLikeTouch = event.pointerType === "touch" && event.isStylus;
 
       if (
         event.pointerType === "touch" &&
@@ -1730,7 +1699,6 @@ export default function InkLayer({
       return (
         event.pointerType === "pen" ||
         event.pointerType === "mouse" ||
-        event.pointerType === "unknown" ||
         (runtimeConfigRef.current.allowTouch && event.pointerType === "touch")
       );
     };

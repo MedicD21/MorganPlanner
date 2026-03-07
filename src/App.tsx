@@ -367,30 +367,6 @@ function isLikelyStylusPointerEvent(
   if (nativeEvent.touchType === "stylus") {
     return true;
   }
-
-  const hasStylusAngles =
-    (Number.isFinite(nativeEvent.altitudeAngle) &&
-      Math.abs(nativeEvent.altitudeAngle ?? 0) > 0.0001) ||
-    (Number.isFinite(nativeEvent.azimuthAngle) &&
-      Math.abs(nativeEvent.azimuthAngle ?? 0) > 0.0001);
-  if (hasStylusAngles && event.pressure > 0) {
-    return true;
-  }
-
-  if (event.pointerType !== "touch") {
-    return false;
-  }
-
-  if (
-    event.width > 0 &&
-    event.height > 0 &&
-    event.width <= 6 &&
-    event.height <= 6 &&
-    event.pressure > 0
-  ) {
-    return true;
-  }
-
   return false;
 }
 
