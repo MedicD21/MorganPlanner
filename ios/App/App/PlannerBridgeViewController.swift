@@ -8,16 +8,32 @@ class PlannerBridgeViewController: CAPBridgeViewController {
         configureWebView()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Disable long-press gesture recognizers after WKWebView has fully
+        // built its internal view hierarchy. This suppresses the iOS edit menu
+        // (Copy / Look Up / Translate) that fires during Apple Pencil strokes.
+        if let webView = bridge?.webView {
+            disableLongPressInHierarchy(webView)
+        }
+    }
+
+    private func disableLongPressInHierarchy(_ view: UIView) {
+        for recognizer in view.gestureRecognizers ?? [] {
+            if recognizer is UILongPressGestureRecognizer {
+                recognizer.isEnabled = false
+            }
+        }
+        for subview in view.subviews {
+            disableLongPressInHierarchy(subview)
+        }
+    }
+
     private func configureWebView() {
         guard let webView = bridge?.webView else { return }
 
         // Disable link preview long-press (suppresses callout on links/images)
         webView.allowsLinkPreview = false
-
-        // Disable native iOS text interaction (Copy/Look Up/Translate popup).
-        // textInteractionEnabled is a public property since iOS 14.5 but the
-        // Xcode SDK spelling can vary; KVC sets it reliably at runtime.
-        webView.setValue(false, forKey: "textInteractionEnabled")
 
         // Inject contextmenu + selectstart suppression before any page JS runs
         let script = """
