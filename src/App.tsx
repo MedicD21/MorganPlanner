@@ -549,6 +549,7 @@ export default function App() {
   const plannerStageRef = useRef<HTMLDivElement | null>(null);
   const zoomSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastNonEraserToolRef = useRef<InkTool>("pen");
+  const preferredPencilActionRef = useRef<string>("switchEraser");
   const activeTouchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
   const touchGestureMetaRef = useRef<Map<number, TouchGestureMeta>>(new Map());
   const pinchGestureRef = useRef<PinchGestureState | null>(null);
@@ -746,6 +747,25 @@ export default function App() {
     setActiveSymbol("");
   }, []);
 
+  const switchToPreviousTool = useCallback(() => {
+    setActiveTool(lastNonEraserToolRef.current === "eraser" ? "pen" : lastNonEraserToolRef.current);
+    setActiveSymbol("");
+  }, []);
+
+  const handlePencilAction = useCallback(() => {
+    const action = preferredPencilActionRef.current;
+    if (action === "ignore") {
+      return;
+    }
+    if (action === "switchPrevious") {
+      switchToPreviousTool();
+      return;
+    }
+    // switchEraser, showColorPalette, showInkAttributes, showContextualPalette,
+    // runSystemShortcut, unknown — all default to eraser toggle
+    toggleEraserFromPencilDoubleTap();
+  }, [switchToPreviousTool, toggleEraserFromPencilDoubleTap]);
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       return;
@@ -756,33 +776,43 @@ export default function App() {
     const listenerHandles: PluginListenerHandle[] = [];
 
     const registerApplePencilListeners = async () => {
+      // Register listeners first — do NOT gate on getCapabilities().
+      // A failing capability check previously silently prevented listeners from ever registering.
       try {
-        await applePencilPlugin.getCapabilities();
-
-        if (canceled) {
-          return;
-        }
-
         const tapHandle = await applePencilPlugin.addListener(
           "pencilTap",
           () => {
-            toggleEraserFromPencilDoubleTap();
+            if (canceled) return;
+            handlePencilAction();
           },
         );
         listenerHandles.push(tapHandle);
+      } catch {
+        // Pencil tap not supported on this model/OS (Pencil 1, USB-C).
+      }
 
+      try {
         const squeezeHandle = await applePencilPlugin.addListener(
           "pencilSqueeze",
           (event) => {
-            if (event.phase === "changed" || event.phase === "began") {
-              return;
-            }
-            toggleEraserFromPencilDoubleTap();
+            if (canceled) return;
+            if (event.phase === "changed" || event.phase === "began") return;
+            handlePencilAction();
           },
         );
         listenerHandles.push(squeezeHandle);
       } catch {
-        // Native Apple Pencil bridge is unavailable on web and older runtimes.
+        // Squeeze not supported on this model/OS (Pencil 1, Pencil 2, USB-C).
+      }
+
+      // Read capabilities separately — failure here does not break listeners.
+      try {
+        const caps = await applePencilPlugin.getCapabilities();
+        if (!canceled && caps.preferredTapAction) {
+          preferredPencilActionRef.current = caps.preferredTapAction;
+        }
+      } catch {
+        // Capabilities unavailable — keep default "switchEraser" behavior.
       }
     };
 
@@ -796,7 +826,7 @@ export default function App() {
         });
       }
     };
-  }, [toggleEraserFromPencilDoubleTap]);
+  }, [handlePencilAction]);
 
   const getActiveInkPageId = () => {
     const plannerWindow = window as Window & { __plannerActiveInkPageId?: string };
