@@ -108,7 +108,9 @@ class PlannerBridgeViewController: CAPBridgeViewController {
             // This global handler prevents that regardless of where the touch lands.
             var activePenPointers = new Set();
             document.addEventListener('pointerdown', function(e) {
-                if (e.pointerType === 'pen') activePenPointers.add(e.pointerId);
+                // pressure > 0 filters out Apple Pencil hover events (which fire
+                // pointerdown with pressure 0 on Pencil Pro / iOS 26 hover).
+                if (e.pointerType === 'pen' && e.pressure > 0) activePenPointers.add(e.pointerId);
             }, { capture: true });
             document.addEventListener('pointerup', function(e) {
                 activePenPointers.delete(e.pointerId);
