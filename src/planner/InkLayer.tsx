@@ -340,6 +340,15 @@ function isLikelyStylusPointer(event: PointerEvent): boolean {
     return true;
   }
 
+  const hasStylusAngles =
+    (Number.isFinite(event.altitudeAngle) &&
+      Math.abs(event.altitudeAngle ?? 0) > 0.0001) ||
+    (Number.isFinite(event.azimuthAngle) &&
+      Math.abs(event.azimuthAngle ?? 0) > 0.0001);
+  if (hasStylusAngles && event.pressure > 0) {
+    return true;
+  }
+
   if (event.pointerType !== "touch") {
     return false;
   }
@@ -351,8 +360,8 @@ function isLikelyStylusPointer(event: PointerEvent): boolean {
   if (
     event.width > 0 &&
     event.height > 0 &&
-    event.width <= 8 &&
-    event.height <= 8 &&
+    event.width <= 20 &&
+    event.height <= 20 &&
     event.pressure > 0
   ) {
     return true;
@@ -1680,16 +1689,28 @@ export default function InkLayer({
     };
 
     const canDrawWithInput = (event: PointerLikeEvent) => {
+      const hasStylusAngles =
+        (Number.isFinite(event.altitudeAngle) &&
+          Math.abs(event.altitudeAngle ?? 0) > 0.0001) ||
+        (Number.isFinite(event.azimuthAngle) &&
+          Math.abs(event.azimuthAngle ?? 0) > 0.0001);
+      const hasStylusTilt =
+        (Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) &&
+        event.pressure > 0;
+      const isStylusLikeTouch =
+        event.pointerType === "touch" &&
+        (event.isStylus || hasStylusAngles || hasStylusTilt);
+
       if (
         event.pointerType === "touch" &&
-        !event.isStylus &&
+        !isStylusLikeTouch &&
         stylusPointerIdsRef.current.size > 0
       ) {
         // Palm rejection: ignore non-stylus touches while any stylus contact is active.
         return false;
       }
 
-      if (event.isStylus) {
+      if (event.isStylus || isStylusLikeTouch) {
         return true;
       }
       return (

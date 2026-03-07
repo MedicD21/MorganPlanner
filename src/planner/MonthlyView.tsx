@@ -77,6 +77,15 @@ function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boo
     return true;
   }
 
+  const hasStylusAngles =
+    (Number.isFinite(nativeEvent.altitudeAngle) &&
+      Math.abs(nativeEvent.altitudeAngle ?? 0) > 0.0001) ||
+    (Number.isFinite(nativeEvent.azimuthAngle) &&
+      Math.abs(nativeEvent.azimuthAngle ?? 0) > 0.0001);
+  if (hasStylusAngles && event.pressure > 0) {
+    return true;
+  }
+
   if (event.pointerType !== "touch") {
     return false;
   }
@@ -88,8 +97,8 @@ function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boo
   if (
     event.width > 0 &&
     event.height > 0 &&
-    event.width <= 8 &&
-    event.height <= 8 &&
+    event.width <= 20 &&
+    event.height <= 20 &&
     event.pressure > 0
   ) {
     return true;

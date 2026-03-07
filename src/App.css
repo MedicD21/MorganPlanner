@@ -961,6 +961,26 @@
   letter-spacing: 0.04em;
 }
 
+.month-number,
+.month-meta-label,
+.month-meta-value span,
+.mini-calendar-title,
+.mini-calendar-weekdays span,
+.mini-day,
+.weekday-row span,
+.calendar-cell span,
+.week-header,
+.weekly-row-label,
+.notes-left-top span,
+.notes-day-row span,
+.notes-page-header,
+.todo-month-panel h3 {
+  pointer-events: none;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 .notes-left-paper {
   border-right: 1px solid #bcb3ad;
 }

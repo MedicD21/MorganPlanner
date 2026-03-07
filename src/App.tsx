@@ -368,6 +368,15 @@ function isLikelyStylusPointerEvent(
     return true;
   }
 
+  const hasStylusAngles =
+    (Number.isFinite(nativeEvent.altitudeAngle) &&
+      Math.abs(nativeEvent.altitudeAngle ?? 0) > 0.0001) ||
+    (Number.isFinite(nativeEvent.azimuthAngle) &&
+      Math.abs(nativeEvent.azimuthAngle ?? 0) > 0.0001);
+  if (hasStylusAngles && event.pressure > 0) {
+    return true;
+  }
+
   if (event.pointerType !== "touch") {
     return false;
   }
@@ -379,8 +388,8 @@ function isLikelyStylusPointerEvent(
   if (
     event.width > 0 &&
     event.height > 0 &&
-    event.width <= 8 &&
-    event.height <= 8 &&
+    event.width <= 20 &&
+    event.height <= 20 &&
     event.pressure > 0
   ) {
     return true;
@@ -1050,15 +1059,47 @@ export default function App() {
     };
   }, [resetStageTouchState]);
 
+  useEffect(() => {
+    const releaseTrackedTouchPointer = (pointerId: number) => {
+      const hadTrackedPointer = activeTouchPointsRef.current.delete(pointerId);
+      touchGestureMetaRef.current.delete(pointerId);
+      if (!hadTrackedPointer) {
+        return;
+      }
+
+      if (activeTouchPointsRef.current.size === 0) {
+        touchGestureMetaRef.current.clear();
+        pinchGestureRef.current = null;
+        activeThreeFingerTapRef.current = null;
+      } else if (activeTouchPointsRef.current.size < 2) {
+        pinchGestureRef.current = null;
+      }
+
+      syncActiveStageTouchCount();
+    };
+
+    const handleGlobalTouchPointerEnd = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      releaseTrackedTouchPointer(event.pointerId);
+    };
+
+    window.addEventListener("pointerup", handleGlobalTouchPointerEnd, true);
+    window.addEventListener("pointercancel", handleGlobalTouchPointerEnd, true);
+
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalTouchPointerEnd, true);
+      window.removeEventListener("pointercancel", handleGlobalTouchPointerEnd, true);
+    };
+  }, [syncActiveStageTouchCount]);
+
   const handleStagePointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     const isStylusInput = isLikelyStylusPointerEvent(event);
     if (isStylusInput) {
-      if (!shouldSkipStageTouchTracking(event.target)) {
-        event.preventDefault();
-        clearBrowserSelection();
-      }
+      clearBrowserSelection();
       return;
     }
 
@@ -1135,10 +1176,7 @@ export default function App() {
   ) => {
     const isStylusInput = isLikelyStylusPointerEvent(event);
     if (isStylusInput) {
-      if (!shouldSkipStageTouchTracking(event.target)) {
-        event.preventDefault();
-        clearBrowserSelection();
-      }
+      clearBrowserSelection();
       return;
     }
 
@@ -1238,9 +1276,6 @@ export default function App() {
   const clearStageTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
     const isStylusInput = isLikelyStylusPointerEvent(event);
     if (isStylusInput) {
-      if (!shouldSkipStageTouchTracking(event.target)) {
-        event.preventDefault();
-      }
       clearBrowserSelection();
       return;
     }
