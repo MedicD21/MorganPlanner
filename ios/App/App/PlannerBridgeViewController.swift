@@ -3,6 +3,8 @@ import Capacitor
 import WebKit
 
 class PlannerBridgeViewController: CAPBridgeViewController {
+    private var suppressionTimer: Timer?
+
     override open func capacitorDidLoad() {
         bridge?.registerPluginType(ApplePencilPlugin.self)
         configureWebView()
@@ -10,12 +12,23 @@ class PlannerBridgeViewController: CAPBridgeViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Suppress immediately, then re-suppress after page load completes.
-        // WKWebView adds gesture recognizers lazily as content renders, so
-        // a single call at viewDidAppear misses recognizers added later.
+        // Initial suppression passes at 0 / 500 / 2000 ms to catch recognizers
+        // that WKWebView adds while the page is loading.
         suppressAfterDelay(0)
         suppressAfterDelay(500)
         suppressAfterDelay(2000)
+        // Repeating timer: WKWebView re-adds gesture recognizers every time the
+        // user interacts, so we need to keep clearing them continuously.
+        suppressionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            guard let webView = self?.bridge?.webView else { return }
+            self?.suppressEditMenuInHierarchy(webView)
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        suppressionTimer?.invalidate()
+        suppressionTimer = nil
     }
 
     private func suppressAfterDelay(_ ms: Int) {
@@ -25,20 +38,23 @@ class PlannerBridgeViewController: CAPBridgeViewController {
         }
     }
 
-    // Recursively disables long-press gesture recognizers and removes
-    // UIEditMenuInteraction (iOS 16+) from every view in the WKWebView tree.
-    // Called after viewDidAppear so WKWebView's internal subviews exist.
+    // Recursively disables long-press gesture recognizers and removes text
+    // interaction objects from every view in the WKWebView tree.
     private func suppressEditMenuInHierarchy(_ view: UIView) {
         for recognizer in view.gestureRecognizers ?? [] {
             if recognizer is UILongPressGestureRecognizer {
                 recognizer.isEnabled = false
             }
         }
-        if #available(iOS 16.0, *) {
-            for interaction in view.interactions {
+        for interaction in view.interactions {
+            if #available(iOS 16.0, *) {
                 if interaction is UIEditMenuInteraction {
                     view.removeInteraction(interaction)
+                    continue
                 }
+            }
+            if interaction is UITextInteraction {
+                view.removeInteraction(interaction)
             }
         }
         for subview in view.subviews {
@@ -62,15 +78,54 @@ class PlannerBridgeViewController: CAPBridgeViewController {
         // Disable link preview long-press (suppresses callout on links/images)
         webView.allowsLinkPreview = false
 
+        // Disable data detectors (date / phone / address auto-links that trigger
+        // the Look Up menu on long press).
+        webView.configuration.dataDetectorTypes = []
+
         // Inject before page JS: suppress contextmenu/selectstart events and
         // apply user-select:none so iOS has nothing to select → no edit menu.
         let script = """
         (function() {
+            // --- Suppress context menu / text selection ---
             function suppress(e) { e.preventDefault(); }
             document.addEventListener('contextmenu', suppress, { capture: true, passive: false });
             document.addEventListener('selectstart', suppress, { capture: true, passive: false });
+            document.addEventListener('selectionchange', function() {
+                var sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) { sel.removeAllRanges(); }
+            }, { capture: true });
+
+            // --- Disable iOS data detector links (date / phone / address) ---
+            var meta = document.createElement('meta');
+            meta.name = 'format-detection';
+            meta.content = 'telephone=no, date=no, address=no, email=no, url=no';
+            document.documentElement.appendChild(meta);
+
+            // --- Block palm touches while Apple Pencil is active ---
+            // InkLayer already blocks touches on the canvas surface, but a palm
+            // landing anywhere else (toolbar, calendar headers, gutters) falls
+            // through to WKWebView's native long-press / text selection.
+            // This global handler prevents that regardless of where the touch lands.
+            var activePenPointers = new Set();
+            document.addEventListener('pointerdown', function(e) {
+                if (e.pointerType === 'pen') activePenPointers.add(e.pointerId);
+            }, { capture: true });
+            document.addEventListener('pointerup', function(e) {
+                activePenPointers.delete(e.pointerId);
+            }, { capture: true });
+            document.addEventListener('pointercancel', function(e) {
+                activePenPointers.delete(e.pointerId);
+            }, { capture: true });
+            document.addEventListener('touchstart', function(e) {
+                if (activePenPointers.size > 0) { e.preventDefault(); }
+            }, { capture: true, passive: false });
+
+            // --- CSS: nothing is selectable, data-detector links are inert ---
             var style = document.createElement('style');
-            style.textContent = '* { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }';
+            style.textContent = [
+                '* { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }',
+                'a[x-apple-data-detectors] { pointer-events: none !important; }'
+            ].join('\\n');
             document.documentElement.appendChild(style);
         })();
         """
