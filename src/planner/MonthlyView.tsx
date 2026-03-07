@@ -91,15 +91,11 @@ function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boo
     return false;
   }
 
-  if ((Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) && event.pressure > 0) {
-    return true;
-  }
-
   if (
     event.width > 0 &&
     event.height > 0 &&
-    event.width <= 20 &&
-    event.height <= 20 &&
+    event.width <= 6 &&
+    event.height <= 6 &&
     event.pressure > 0
   ) {
     return true;

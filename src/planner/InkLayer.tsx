@@ -354,15 +354,11 @@ function isLikelyStylusPointer(event: PointerEvent): boolean {
     return false;
   }
 
-  if ((Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) && event.pressure > 0) {
-    return true;
-  }
-
   if (
     event.width > 0 &&
     event.height > 0 &&
-    event.width <= 20 &&
-    event.height <= 20 &&
+    event.width <= 6 &&
+    event.height <= 6 &&
     event.pressure > 0
   ) {
     return true;
@@ -1715,12 +1711,9 @@ export default function InkLayer({
           Math.abs(event.altitudeAngle ?? 0) > 0.0001) ||
         (Number.isFinite(event.azimuthAngle) &&
           Math.abs(event.azimuthAngle ?? 0) > 0.0001);
-      const hasStylusTilt =
-        (Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0) &&
-        event.pressure > 0;
       const isStylusLikeTouch =
         event.pointerType === "touch" &&
-        (event.isStylus || hasStylusAngles || hasStylusTilt);
+        (event.isStylus || hasStylusAngles);
 
       if (
         event.pointerType === "touch" &&
