@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MONTH_NAMES,
   WEEKDAY_INITIALS,
@@ -132,7 +132,7 @@ function weekTabLabel(week: CalendarCell[]): string {
 }
 
 function MiniCalendar({ year, month }: MiniCalendarProps) {
-  const data = generateCalendar(year, month);
+  const data = useMemo(() => generateCalendar(year, month), [year, month]);
 
   return (
     <div
@@ -327,7 +327,7 @@ export default function MonthlyView({
   onWeekIndexChange,
 }: MonthlyViewProps) {
   const [activeView, setActiveView] = useState<SpreadView>("month-week");
-  const calendarData = generateCalendar(year, month);
+  const calendarData = useMemo(() => generateCalendar(year, month), [year, month]);
   const safeWeekIndex = Math.max(
     0,
     Math.min(weekIndex, calendarData.weeks.length - 1),
@@ -590,6 +590,7 @@ export default function MonthlyView({
         >
           <article
             className="planner-paper month-paper"
+            onContextMenu={(e) => e.preventDefault()}
             onPointerDown={handleMonthSwipeStart}
             onPointerMove={(event) => {
               if (
@@ -671,6 +672,7 @@ export default function MonthlyView({
 
           <article
             className="planner-paper week-paper"
+            onContextMenu={(e) => e.preventDefault()}
             onPointerDown={handleWeekSwipeStart}
             onPointerUp={handleWeekSwipeEnd}
             onPointerCancel={clearWeekSwipe}

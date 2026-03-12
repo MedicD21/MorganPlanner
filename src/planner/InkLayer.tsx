@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  normalizeInkTip,
+  PLANNER_UNDO_EVENT,
+  PLANNER_REDO_EVENT,
+  ACTIVE_INK_PAGE_KEY,
+  type InkTipKind,
+  type InkShapeKind,
+} from "./plannerShared";
+export type { InkTipKind, InkShapeKind } from "./plannerShared";
 
 export type InkInputType = "pen" | "touch" | "mouse" | "unknown";
-export type InkShapeKind = "line" | "rectangle" | "ellipse" | "triangle";
-export type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
 export type InkLayerMode =
   | "draw"
   | "erase"
@@ -178,9 +185,6 @@ const COLLAPSED_STICKY_SIZE = 30;
 const BUCKET_FILL_OPACITY = 0.28;
 const DEFAULT_STICKY_COLOR = "#faefb5";
 const MAX_HISTORY_DEPTH = 160;
-const PLANNER_UNDO_EVENT = "planner-undo";
-const PLANNER_REDO_EVENT = "planner-redo";
-const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
 
 interface PlannerHistoryEventDetail {
   targetPageId: string | null;
@@ -191,25 +195,6 @@ function normalizeInputType(pointerType: string): InkInputType {
     return pointerType;
   }
   return "unknown";
-}
-
-function normalizeInkTip(value: unknown): InkTipKind {
-  if (value === "round") {
-    return "round";
-  }
-  if (value === "fine") {
-    return "fine";
-  }
-  if (value === "fountain") {
-    return "fountain";
-  }
-  if (value === "marker") {
-    return "marker";
-  }
-  if (value === "chisel") {
-    return "chisel";
-  }
-  return "round";
 }
 
 function tipWidthMultiplier(tip: InkTipKind): number {
@@ -228,20 +213,30 @@ function tipWidthMultiplier(tip: InkTipKind): number {
   return 1;
 }
 
+/**
+ * Maps raw pressure (0–1) to a rendered width factor for each tip.
+ * Ease-in curve (Math.pow(..., 0.65)) ensures light touches are noticeably
+ * finer while firm strokes bloom naturally — much more natural than linear.
+ */
 function tipPressureFactor(tip: InkTipKind, pressure: number): number {
   if (tip === "fine") {
-    return 0.52 + pressure * 0.5;
+    // Tight range: stays thin even under pressure.
+    return 0.44 + Math.pow(pressure, 0.7) * 0.58;
   }
   if (tip === "fountain") {
-    return 0.22 + pressure * 1.45;
+    // Wide dynamic range: feather-light → bold; taper applied separately in redraw.
+    return 0.18 + Math.pow(pressure, 0.55) * 1.55;
   }
   if (tip === "marker") {
+    // Flat: marker width doesn't vary with pressure.
     return 1;
   }
   if (tip === "chisel") {
-    return 0.86 + pressure * 0.24;
+    // Slight variation; geometry (tilt) matters more than pressure.
+    return 0.82 + Math.pow(pressure, 0.8) * 0.28;
   }
-  return pressure;
+  // round — ease-in: faint touch → noticeably fine, firm press → blooms.
+  return Math.pow(pressure, 0.65);
 }
 
 function tipLineCap(tip: InkTipKind): CanvasLineCap {
@@ -1518,20 +1513,47 @@ export default function InkLayer({
             return;
           }
 
-          for (let i = 1; i < stroke.points.length; i += 1) {
-            const previousPoint = stroke.points[i - 1];
-            const currentPoint = stroke.points[i];
+          // Smooth rendering: use quadratic bezier through midpoints so adjacent
+          // segments share endpoints and join without visible kinks. Fountain tip
+          // also tapers at stroke start/end for a natural calligraphy effect.
+          const nPts = stroke.points.length;
+          const smoothTip = normalizeInkTip(stroke.tip);
+          for (let i = 1; i < nPts; i += 1) {
+            const prevPoint = stroke.points[i - 1];
+            const currPoint = stroke.points[i];
             const segmentPressure =
-              (previousPoint.pressure + currentPoint.pressure) / 2;
-            ctx.lineWidth = strokeSegmentWidth(
-              stroke,
-              segmentPressure,
-              previousPoint,
-              currentPoint,
-            );
+              (prevPoint.pressure + currPoint.pressure) / 2;
+
+            // Fountain taper: fade in for first 20% of stroke, out for last 20%.
+            let taperFactor = 1;
+            if (smoothTip === "fountain" && nPts > 5) {
+              const t = i / (nPts - 1);
+              if (t < 0.2) taperFactor = 0.25 + (t / 0.2) * 0.75;
+              else if (t > 0.8) taperFactor = 0.25 + ((1 - t) / 0.2) * 0.75;
+            }
+
+            ctx.lineWidth =
+              strokeSegmentWidth(stroke, segmentPressure, prevPoint, currPoint) *
+              taperFactor;
+
+            // Midpoints are shared endpoints between consecutive segments → smooth.
+            const prevPrevPoint = i >= 2 ? stroke.points[i - 2] : prevPoint;
+            const startX =
+              i >= 2 ? (prevPrevPoint.x + prevPoint.x) / 2 : prevPoint.x;
+            const startY =
+              i >= 2 ? (prevPrevPoint.y + prevPoint.y) / 2 : prevPoint.y;
+            const isLast = i === nPts - 1;
+            const endX = isLast ? currPoint.x : (prevPoint.x + currPoint.x) / 2;
+            const endY = isLast ? currPoint.y : (prevPoint.y + currPoint.y) / 2;
+
             ctx.beginPath();
-            ctx.moveTo(previousPoint.x, previousPoint.y);
-            ctx.lineTo(currentPoint.x, currentPoint.y);
+            if (i >= 2) {
+              ctx.moveTo(startX, startY);
+              ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, endX, endY);
+            } else {
+              ctx.moveTo(startX, startY);
+              ctx.lineTo(endX, endY);
+            }
             ctx.stroke();
           }
 

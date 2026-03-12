@@ -10,36 +10,54 @@ import {
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import "./App.css";
 import MonthlyView from "./planner/MonthlyView";
+import { generateCalendar } from "./planner/generateCalendar";
+import FloatingToolbar from "./toolbar/FloatingToolbar";
+import {
+  clampStrokeSize,
+  isDrawingTool,
+  isHexColor,
+  normalizeInkTip,
+  PLANNER_UNDO_EVENT,
+  PLANNER_REDO_EVENT,
+  ACTIVE_INK_PAGE_KEY,
+  ACTIVE_STAGE_TOUCH_COUNT_KEY,
+  type DrawingTool,
+  type FavoriteStyle,
+  type InkShapeKind,
+  type InkTipKind,
+  type InkTool,
+} from "./planner/plannerShared";
 
-const DEFAULT_YEAR = 2026;
-const DEFAULT_MONTH = 3;
-const DEFAULT_WEEK_INDEX = 2;
+const _todayInit = new Date();
+const DEFAULT_YEAR = _todayInit.getFullYear();
+const DEFAULT_MONTH = _todayInit.getMonth() + 1;
+
+function computeCurrentWeekIndex(year: number, month: number): number {
+  const today = new Date();
+  if (today.getFullYear() !== year || today.getMonth() + 1 !== month) {
+    return 0;
+  }
+  const calendar = generateCalendar(year, month);
+  const todayDate = today.getDate();
+  const idx = calendar.weeks.findIndex((week) =>
+    week.some((cell) => cell.inMonth && cell.dayNumber === todayDate && cell.month === month),
+  );
+  return idx >= 0 ? idx : 0;
+}
+
+const DEFAULT_WEEK_INDEX = computeCurrentWeekIndex(DEFAULT_YEAR, DEFAULT_MONTH);
 const DEFAULT_COLOR = "#2f2b2a";
 const DEFAULT_STROKE_SIZE = 2.1;
 const FAVORITE_COLOR_LIMIT = 12;
 const FAVORITE_STYLE_LIMIT = 8;
 const FAVORITE_COLORS_STORAGE_KEY = "planner-favorite-colors-v1";
 const FAVORITE_STYLES_STORAGE_KEY = "planner-favorite-styles-v1";
-const DEFAULT_COLOR_PALETTE = [
-  "#2f2b2a",
-  "#1f3a64",
-  "#0f6f67",
-  "#0f8f43",
-  "#a05f13",
-  "#8d2525",
-  "#7f3c9a",
-  "#5f5f63",
-];
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.8;
 const PENCIL_DOUBLE_TAP_MS = 340;
 const THREE_FINGER_TAP_MAX_MS = 340;
 const THREE_FINGER_DOUBLE_TAP_MS = 520;
 const THREE_FINGER_MAX_MOVE = 26;
-const PLANNER_UNDO_EVENT = "planner-undo";
-const PLANNER_REDO_EVENT = "planner-redo";
-const ACTIVE_INK_PAGE_KEY = "__plannerActiveInkPageId";
-const ACTIVE_STAGE_TOUCH_COUNT_KEY = "__plannerActiveStageTouchCount";
 
 interface ApplePencilTapEvent {
   timestamp: number;
@@ -90,32 +108,6 @@ interface ApplePencilPlugin {
   getCapabilities(): Promise<ApplePencilCapabilities>;
 }
 
-type ShapeKind = "line" | "rectangle" | "ellipse" | "triangle";
-type DrawingTool = "pen" | "pencil" | "highlighter" | "shape";
-type InkTipKind = "round" | "fine" | "fountain" | "marker" | "chisel";
-type InkTool =
-  | DrawingTool
-  | "eraser"
-  | "bucket"
-  | "lasso"
-  | "elements"
-  | "text"
-  | "image"
-  | "sticky";
-
-interface FavoriteStyle {
-  id: string;
-  tool: DrawingTool;
-  color: string;
-  size: number;
-  tip: InkTipKind;
-}
-
-interface SymbolOption {
-  label: string;
-  value: string;
-}
-
 interface TouchPoint {
   x: number;
   y: number;
@@ -152,181 +144,6 @@ interface PlannerHistoryEventDetail {
   targetPageId: string | null;
 }
 
-const TOOL_LABELS: Record<InkTool, string> = {
-  pen: "Pen",
-  pencil: "Pencil",
-  highlighter: "Highlighter",
-  eraser: "Eraser",
-  bucket: "Bucket",
-  shape: "Shape",
-  lasso: "Lasso",
-  elements: "Elements",
-  text: "Text",
-  image: "Image",
-  sticky: "Post-it",
-};
-
-const TOOL_SEQUENCE: InkTool[] = [
-  "pen",
-  "pencil",
-  "highlighter",
-  "bucket",
-  "eraser",
-  "shape",
-  "lasso",
-  "elements",
-  "text",
-  "image",
-  "sticky",
-];
-
-const SHAPE_OPTIONS: Array<{ label: string; value: ShapeKind }> = [
-  { label: "Line", value: "line" },
-  { label: "Rect", value: "rectangle" },
-  { label: "Oval", value: "ellipse" },
-  { label: "Tri", value: "triangle" },
-];
-
-const SYMBOL_OPTIONS: SymbolOption[] = [
-  { label: "Draw", value: "" },
-  { label: "Check", value: "✓" },
-  { label: "Star", value: "★" },
-  { label: "Bullet", value: "•" },
-  { label: "Arrow", value: "→" },
-  { label: "Heart", value: "♥" },
-];
-
-const TIP_OPTIONS: Array<{ value: InkTipKind; label: string }> = [
-  { value: "round", label: "Round" },
-  { value: "fine", label: "Fine" },
-  { value: "fountain", label: "Fountain" },
-  { value: "marker", label: "Marker" },
-  { value: "chisel", label: "Chisel" },
-];
-
-function normalizeInkTip(value: unknown): InkTipKind {
-  if (value === "round") {
-    return "round";
-  }
-  if (value === "fine") {
-    return "fine";
-  }
-  if (value === "fountain") {
-    return "fountain";
-  }
-  if (value === "marker") {
-    return "marker";
-  }
-  if (value === "chisel") {
-    return "chisel";
-  }
-  return "round";
-}
-
-function ToolIcon({ tool }: { tool: InkTool }) {
-  if (tool === "pen") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M5 19l4-1 8-8-3-3-8 8-1 4z" />
-        <path d="M13 6l3 3" />
-      </svg>
-    );
-  }
-
-  if (tool === "pencil") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M4 17l3 3 11-11-3-3L4 17z" />
-        <path d="M3 21l4-1-3-3-1 4z" />
-      </svg>
-    );
-  }
-
-  if (tool === "highlighter") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M6 7h8l3 3v7H6z" />
-        <path d="M6 14h11" />
-      </svg>
-    );
-  }
-
-  if (tool === "eraser") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M6 15l6-8 7 5-6 8H6z" />
-        <path d="M4 19h16" />
-      </svg>
-    );
-  }
-
-  if (tool === "bucket") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M6 11l6-6 6 6-6 6-6-6z" />
-        <path d="M4 18h16" />
-      </svg>
-    );
-  }
-
-  if (tool === "shape") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <rect x="3.5" y="4.5" width="8" height="8" rx="1" />
-        <circle cx="16.5" cy="16.5" r="4" />
-      </svg>
-    );
-  }
-
-  if (tool === "lasso") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M5 9c0-3 3-5 7-5s7 2 7 5-3 5-7 5-7-2-7-5z" />
-        <path d="M12 14v4c0 1-1 2-2 2" />
-      </svg>
-    );
-  }
-
-  if (tool === "elements") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path
-          d="M12 4l2.2 4.7 5.1.7-3.7 3.6.9 5.1-4.5-2.4-4.5 2.4.9-5.1-3.7-3.6 5.1-.7z"
-          fill="currentColor"
-          stroke="none"
-        />
-      </svg>
-    );
-  }
-
-  if (tool === "text") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <path d="M4 6h16" />
-        <path d="M12 6v13" />
-        <path d="M8 19h8" />
-      </svg>
-    );
-  }
-
-  if (tool === "sticky") {
-    return (
-      <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-        <rect x="4" y="4" width="15" height="15" rx="1.8" />
-        <path d="M13 19v-4.5c0-.9.7-1.5 1.5-1.5H19" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-      <path d="M6 16l4-4 3 3 3-5 2 6" />
-      <circle cx="8" cy="9" r="1.4" />
-    </svg>
-  );
-}
-
 function readStorage<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -337,17 +154,6 @@ function readStorage<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function isHexColor(value: string): boolean {
-  return /^#[0-9a-f]{6}$/i.test(value);
-}
-
-function clampStrokeSize(value: number): number {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_STROKE_SIZE;
-  }
-  return Math.min(Math.max(value, 0.8), 4.8);
 }
 
 function clampValue(value: number, min: number, max: number): number {
@@ -394,15 +200,6 @@ function getClosestInteractiveControl(target: EventTarget | null): HTMLElement |
 
 function shouldSkipStageTouchTracking(target: EventTarget | null): boolean {
   return getClosestInteractiveControl(target) !== null;
-}
-
-function isDrawingTool(tool: InkTool): tool is DrawingTool {
-  return (
-    tool === "pen" ||
-    tool === "pencil" ||
-    tool === "highlighter" ||
-    tool === "shape"
-  );
 }
 
 function loadFavoriteColors(): string[] {
@@ -494,15 +291,16 @@ function makeFavoriteStyle(
 }
 
 export default function App() {
+  const [year, setYear] = useState<number>(DEFAULT_YEAR);
   const [month, setMonth] = useState<number>(DEFAULT_MONTH);
   const [weekIndex, setWeekIndex] = useState<number>(DEFAULT_WEEK_INDEX);
-  const allowTouchInk = false;
+  const [allowTouchInk, setAllowTouchInk] = useState<boolean>(false);
   const [activeTool, setActiveTool] = useState<InkTool>("pen");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_COLOR);
   const [strokeSize, setStrokeSize] = useState<number>(DEFAULT_STROKE_SIZE);
   const [activeTip, setActiveTip] = useState<InkTipKind>("round");
   const [activeSymbol, setActiveSymbol] = useState<string>("");
-  const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
+  const [shapeKind, setShapeKind] = useState<InkShapeKind>("line");
   const [textStamp, setTextStamp] = useState<string>("note");
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [zoomOffset, setZoomOffset] = useState<{ x: number; y: number }>({
@@ -517,7 +315,6 @@ export default function App() {
   const [favoriteStyles, setFavoriteStyles] = useState<FavoriteStyle[]>(
     loadFavoriteStyles,
   );
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const plannerStageRef = useRef<HTMLDivElement | null>(null);
   const zoomSurfaceRef = useRef<HTMLDivElement | null>(null);
   const lastNonEraserToolRef = useRef<InkTool>("pen");
@@ -568,33 +365,7 @@ export default function App() {
     return Math.max(10, clampStrokeSize(strokeSize) * 6);
   }, [strokeSize]);
 
-  const visibleColorSwatches = useMemo(() => {
-    const merged = [...favoriteColors];
-    for (const color of DEFAULT_COLOR_PALETTE) {
-      if (!merged.includes(color)) {
-        merged.push(color);
-      }
-    }
-    return merged.slice(0, FAVORITE_COLOR_LIMIT);
-  }, [favoriteColors]);
-
   const canSaveStyle = isDrawingTool(activeTool);
-  const isStrokeEnabled =
-    activeTool !== "bucket" &&
-    activeTool !== "lasso" &&
-    activeTool !== "elements" &&
-    activeTool !== "text" &&
-    activeTool !== "image" &&
-    activeTool !== "sticky";
-  const isPaletteEnabled =
-    activeTool !== "eraser" &&
-    activeTool !== "lasso" &&
-    activeTool !== "image";
-  const showShapeControls = activeTool === "shape";
-  const showElementControls = activeTool === "elements";
-  const showTextControls = activeTool === "text";
-  const showImageControls = activeTool === "image";
-  const canSelectTip = isDrawingTool(activeTool);
 
   useEffect(() => {
     try {
@@ -692,6 +463,11 @@ export default function App() {
   }, []);
 
   const handleMonthTabChange = (nextMonth: number) => {
+    setYear((currentYear) => {
+      if (nextMonth === 1 && month === 12) return currentYear + 1;
+      if (nextMonth === 12 && month === 1) return currentYear - 1;
+      return currentYear;
+    });
     setMonth(nextMonth);
     setWeekIndex(0);
   };
@@ -1456,6 +1232,26 @@ export default function App() {
     setActiveSymbol("");
   };
 
+  const handleDeleteStyle = useCallback((id: string) => {
+    setFavoriteStyles((current) => current.filter((s) => s.id !== id));
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    applyZoomTransform(
+      clampValue(zoomScaleRef.current + 0.2, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE),
+      zoomOffsetRef.current,
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    applyZoomTransform(
+      clampValue(zoomScaleRef.current - 0.2, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE),
+      zoomOffsetRef.current,
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -1513,267 +1309,37 @@ export default function App() {
 
   return (
     <main className="app-shell" onPointerDownCapture={handleStylusUiPointerDownCapture}>
-      <header className="top-ink-toolbar" aria-label="Writing tools">
-        <div className="top-toolbar-row">
-          <div className="top-toolbar-group">
-            {TOOL_SEQUENCE.map((tool) => (
-              <button
-                key={tool}
-                type="button"
-                className={
-                  tool === activeTool
-                    ? "toolbar-button toolbar-icon-button active"
-                    : "toolbar-button toolbar-icon-button"
-                }
-                onClick={(event) => {
-                  handleToolButtonClick(tool, event.timeStamp);
-                }}
-                title={TOOL_LABELS[tool]}
-                aria-label={TOOL_LABELS[tool]}
-              >
-                <ToolIcon tool={tool} />
-                <span className="sr-only">{TOOL_LABELS[tool]}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              className="toolbar-button toolbar-icon-button"
-              onClick={triggerUndo}
-              title="Undo (three-finger double tap)"
-              aria-label="Undo"
-            >
-              <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-                <path d="M9 7L4 12l5 5" />
-                <path d="M5 12h9a6 6 0 010 12h-1" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="toolbar-button toolbar-icon-button"
-              onClick={triggerRedo}
-              title="Redo"
-              aria-label="Redo"
-            >
-              <svg viewBox="0 0 24 24" className="tool-icon-svg" aria-hidden="true">
-                <path d="M15 7l5 5-5 5" />
-                <path d="M19 12h-9a6 6 0 000 12h1" />
-              </svg>
-            </button>
-          </div>
-
-          <div className="top-toolbar-group draw-weight-group">
-            <label htmlFor="draw-weight-slider" className="draw-weight-label">
-              Weight
-            </label>
-            <input
-              id="draw-weight-slider"
-              className="draw-weight-slider"
-              type="range"
-              min="0.8"
-              max="4.8"
-              step="0.1"
-              value={clampStrokeSize(strokeSize)}
-              onChange={(event) => {
-                setStrokeSize(clampStrokeSize(Number(event.target.value)));
-              }}
-              disabled={!isStrokeEnabled}
-              aria-label="Draw weight"
-            />
-            <span className="draw-weight-value">
-              {clampStrokeSize(strokeSize).toFixed(1)}
-            </span>
-          </div>
-
-          <div className="top-toolbar-group styles-chip-row">
-            {favoriteStyles.slice(0, 4).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className="style-chip-button"
-                onClick={() => applyStyle(preset)}
-                title={`${TOOL_LABELS[preset.tool]} ${preset.size.toFixed(1)} ${preset.tip}`}
-              >
-                <span
-                  className="style-chip-color"
-                  style={{ backgroundColor: preset.color }}
-                />
-                <span>{preset.size.toFixed(1)}</span>
-                <span>{preset.tip.slice(0, 2)}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              className="toolbar-button"
-              onClick={saveCurrentStyle}
-              disabled={!canSaveStyle}
-              title="Save current writing style"
-            >
-              Save Style
-            </button>
-          </div>
-
-          <label className="top-toolbar-toggle">
-            <input
-              type="checkbox"
-              checked={false}
-              readOnly
-              disabled
-            />
-            Finger Off
-          </label>
-        </div>
-
-        <div className="top-toolbar-row">
-          <div className="top-toolbar-group tip-selector-group">
-            {TIP_OPTIONS.map((tipOption) => (
-              <button
-                key={tipOption.value}
-                type="button"
-                className={
-                  activeTip === tipOption.value
-                    ? "toolbar-button tip-chip-button active"
-                    : "toolbar-button tip-chip-button"
-                }
-                onClick={() => {
-                  setActiveTip(tipOption.value);
-                }}
-                title={`${tipOption.label} tip`}
-                disabled={!canSelectTip}
-              >
-                <span
-                  className={`tip-chip-line tip-line-${tipOption.value}`}
-                  aria-hidden="true"
-                />
-                <span>{tipOption.label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div
-            className="top-toolbar-group color-swatch-row"
-            aria-label="Color swatches"
-          >
-            {visibleColorSwatches.map((savedColor) => (
-              <button
-                key={savedColor}
-                type="button"
-                className={
-                  savedColor === activeColor
-                    ? "swatch-button active"
-                    : "swatch-button"
-                }
-                style={{ backgroundColor: savedColor }}
-                onClick={() => {
-                  setActiveColor(savedColor);
-                }}
-                aria-label={`Use color ${savedColor}`}
-                disabled={!isPaletteEnabled}
-              />
-            ))}
-          </div>
-
-          <input
-            className="top-color-picker"
-            type="color"
-            value={activeColor}
-            onChange={(event) => {
-              setActiveColor(event.target.value.toLowerCase());
-            }}
-            aria-label="Current color"
-            disabled={!isPaletteEnabled}
-          />
-
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={saveCurrentColor}
-            disabled={!isPaletteEnabled}
-          >
-            Save Color
-          </button>
-
-          <div className="top-toolbar-group symbols-chip-row">
-            {showShapeControls
-              ? SHAPE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={
-                      option.value === shapeKind
-                        ? "toolbar-button active"
-                        : "toolbar-button"
-                    }
-                    onClick={() => {
-                      setShapeKind(option.value);
-                    }}
-                    title={option.label}
-                  >
-                    {option.label}
-                  </button>
-                ))
-              : null}
-
-            {showElementControls
-              ? SYMBOL_OPTIONS.map((option) => {
-                  const isActive = option.value === activeSymbol;
-                  return (
-                    <button
-                      key={option.label}
-                      type="button"
-                      className={
-                        isActive
-                          ? "toolbar-button active symbol-button"
-                          : "toolbar-button symbol-button"
-                      }
-                      onClick={() => {
-                        setActiveSymbol(option.value);
-                      }}
-                      title={option.label}
-                    >
-                      {option.value || option.label}
-                    </button>
-                  );
-                })
-              : null}
-
-            {showTextControls ? (
-              <input
-                type="text"
-                value={textStamp}
-                onChange={(event) => {
-                  setTextStamp(event.target.value);
-                }}
-                className="top-toolbar-text-input"
-                placeholder="Text stamp"
-                maxLength={48}
-                aria-label="Text stamp"
-              />
-            ) : null}
-
-            {showImageControls ? (
-              <>
-                <button
-                  type="button"
-                  className="toolbar-button"
-                  onClick={() => {
-                    imageInputRef.current?.click();
-                  }}
-                >
-                  Pick Image
-                </button>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/png, image/jpeg, image/webp"
-                  className="toolbar-file-input"
-                  onChange={handleImageFileChange}
-                />
-              </>
-            ) : null}
-
-          </div>
-        </div>
-      </header>
+      <FloatingToolbar
+        activeTool={activeTool}
+        activeColor={activeColor}
+        strokeSize={strokeSize}
+        activeTip={activeTip}
+        activeSymbol={activeSymbol}
+        shapeKind={shapeKind}
+        textStamp={textStamp}
+        allowTouchInk={allowTouchInk}
+        imageStampSrc={imageStampSrc}
+        favoriteColors={favoriteColors}
+        favoriteStyles={favoriteStyles}
+        canSaveStyle={canSaveStyle}
+        onToolChange={handleToolButtonClick}
+        onColorChange={setActiveColor}
+        onSizeChange={setStrokeSize}
+        onTipChange={setActiveTip}
+        onSymbolChange={setActiveSymbol}
+        onShapeKindChange={setShapeKind}
+        onTextStampChange={setTextStamp}
+        onTouchInkChange={setAllowTouchInk}
+        onSaveColor={saveCurrentColor}
+        onSaveStyle={saveCurrentStyle}
+        onApplyStyle={applyStyle}
+        onDeleteStyle={handleDeleteStyle}
+        onUndo={triggerUndo}
+        onRedo={triggerRedo}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onImageFileChange={handleImageFileChange}
+      />
 
       <div className="app-layout">
         <div
@@ -1801,7 +1367,7 @@ export default function App() {
             }}
           >
             <MonthlyView
-              year={DEFAULT_YEAR}
+              year={year}
               month={month}
               weekIndex={weekIndex}
               allowTouchInk={allowTouchInk}

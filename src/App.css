@@ -15,15 +15,15 @@
   --shell-pad-x: clamp(0.5rem, 1.6vw, 1.25rem);
   --shell-pad-y: clamp(0.5rem, 2vw, 1.25rem);
   --layout-gap: clamp(0.5rem, 1vw, 1rem);
-  --toolbar-reserve: clamp(78px, 13vh, 124px);
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   padding: var(--shell-pad-y) var(--shell-pad-x);
+  /* Top padding accommodates floating toolbar in "top" mode */
+  padding-top: calc(var(--shell-pad-y) + var(--floating-toolbar-height, 0px));
   display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 0.45rem;
+  grid-template-rows: 1fr;
   overflow: hidden;
   touch-action: none;
   color: var(--ink);
@@ -37,216 +37,6 @@
   grid-template-columns: 1fr;
   min-height: 0;
   align-items: stretch;
-}
-
-.top-ink-toolbar {
-  border: 1px solid rgba(60, 41, 46, 0.35);
-  background: rgba(251, 246, 240, 0.94);
-  border-radius: 12px;
-  box-shadow: 0 16px 40px rgba(18, 10, 13, 0.18);
-  padding: 0.38rem 0.45rem;
-  display: grid;
-  gap: 0.3rem;
-  overflow: hidden;
-  touch-action: manipulation;
-}
-
-.top-toolbar-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.32rem;
-}
-
-.top-toolbar-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.28rem;
-}
-
-.draw-weight-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px solid #b9aea4;
-  border-radius: 999px;
-  background: #f7f3ee;
-  padding: 0.18rem 0.5rem;
-  min-width: clamp(9rem, 16vw, 12rem);
-}
-
-.draw-weight-label {
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  color: #4b4341;
-  white-space: nowrap;
-}
-
-.draw-weight-slider {
-  flex: 1 1 auto;
-  min-width: 4.8rem;
-  accent-color: #2f2827;
-}
-
-.draw-weight-slider:disabled {
-  opacity: 0.55;
-}
-
-.draw-weight-value {
-  min-width: 1.9rem;
-  text-align: right;
-  font-size: 0.62rem;
-  letter-spacing: 0.03em;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-}
-
-.tip-selector-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.24rem;
-}
-
-.tip-chip-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  text-transform: none;
-  letter-spacing: 0.01em;
-  padding: 0.16rem 0.42rem;
-  font-size: 0.61rem;
-}
-
-.tip-chip-line {
-  width: 1.2rem;
-  height: 2px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.tip-line-round {
-  height: 4px;
-}
-
-.tip-line-fine {
-  height: 1px;
-}
-
-.tip-line-fountain {
-  height: 3px;
-  border-radius: 1px;
-}
-
-.tip-line-marker {
-  height: 5px;
-  border-radius: 0;
-}
-
-.tip-line-chisel {
-  height: 4px;
-  border-radius: 0;
-  transform: skewX(-18deg);
-}
-
-.styles-chip-row {
-  margin-left: auto;
-}
-
-.color-swatch-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.22rem;
-}
-
-.color-swatch-row .swatch-button {
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-}
-
-.style-chip-button {
-  border: 1px solid #b7ab9f;
-  border-radius: 999px;
-  background: #f5f0ea;
-  color: #2d2928;
-  padding: 0.2rem 0.45rem;
-  font-size: 0.62rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  cursor: pointer;
-}
-
-.style-chip-button:focus-visible {
-  outline: 2px solid #6f625d;
-  outline-offset: 1px;
-}
-
-.style-chip-color {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.22);
-}
-
-.top-color-picker {
-  width: 34px;
-  height: 24px;
-  border: 1px solid #b7aca2;
-  border-radius: 6px;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-
-.symbols-chip-row {
-  margin-left: auto;
-}
-
-.symbol-button {
-  min-width: 2rem;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.78rem;
-  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
-  font-weight: 700;
-}
-
-.top-toolbar-toggle {
-  margin-left: auto;
-  border: 1px solid #c2b9ad;
-  border-radius: 999px;
-  padding: 0.2rem 0.5rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.36rem;
-  font-size: 0.64rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: #f8f4ee;
-  touch-action: manipulation;
-}
-
-.top-toolbar-toggle input {
-  margin: 0;
-}
-
-.top-toolbar-text-input {
-  width: clamp(8rem, 22vw, 14rem);
-  height: 1.7rem;
-  border: 1px solid #b6aa9e;
-  border-radius: 6px;
-  background: #fffdfa;
-  color: #2d2928;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  font-size: 0.72rem;
-  padding: 0.2rem 0.42rem;
-}
-
-.toolbar-file-input {
-  display: none;
 }
 
 .planner-stage {
@@ -276,59 +66,6 @@
   touch-action: none;
 }
 
-.ink-toolbar {
-  width: var(--tool-panel-width);
-  height: 100%;
-  max-height: calc(100dvh - (var(--shell-pad-y) * 2));
-  background: rgba(251, 246, 240, 0.94);
-  border: 1px solid rgba(60, 41, 46, 0.35);
-  border-radius: 12px;
-  box-shadow: 0 16px 40px rgba(18, 10, 13, 0.28);
-  padding: 0.62rem 0.58rem;
-  overflow: auto;
-  overscroll-behavior: contain;
-  backdrop-filter: blur(2px);
-  touch-action: pan-y pinch-zoom;
-}
-
-.ink-toolbar h2 {
-  margin: 0;
-  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
-  font-size: 1.28rem;
-  line-height: 1.05;
-}
-
-.ink-toolbar-subtitle {
-  margin: 0.16rem 0 0.52rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #4e4644;
-}
-
-.toolbar-section {
-  border: 1px solid #d1c8bc;
-  background: #f9f6f1;
-  border-radius: 7px;
-  padding: 0.36rem 0.38rem 0.4rem;
-  margin-bottom: 0.38rem;
-}
-
-.toolbar-section h3 {
-  margin: 0;
-  font-size: 0.74rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-}
-
-.tool-button-row {
-  margin-top: 0.3rem;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.28rem;
-}
-
 .toolbar-button {
   border: 1px solid #aa9f93;
   border-radius: 6px;
@@ -342,38 +79,6 @@
   cursor: pointer;
 }
 
-.toolbar-icon-button {
-  width: 2rem;
-  height: 1.9rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tool-icon-svg {
-  width: 1.08rem;
-  height: 1.08rem;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  border: 0;
-  padding: 0;
-  white-space: nowrap;
-  clip-path: inset(50%);
-  clip: rect(0 0 0 0);
-  overflow: hidden;
-}
-
 .toolbar-button.active {
   background: #2f2827;
   color: #f8f6f2;
@@ -381,8 +86,7 @@
 }
 
 .toolbar-button:focus-visible,
-.swatch-button:focus-visible,
-.style-preset-button:focus-visible {
+.swatch-button:focus-visible {
   outline: 2px solid #6f625d;
   outline-offset: 1px;
 }
@@ -391,59 +95,6 @@
 .swatch-button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.toolbar-action-row {
-  margin-top: 0.28rem;
-}
-
-.toolbar-field-label {
-  display: block;
-  margin-top: 0.28rem;
-  font-size: 0.64rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-}
-
-.toolbar-effect-label {
-  margin-top: 0.2rem;
-  color: #595251;
-}
-
-.color-picker-row {
-  margin-top: 0.2rem;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.color-picker-row input[type="color"] {
-  width: 38px;
-  height: 28px;
-  border: 1px solid #b7aca2;
-  border-radius: 6px;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-
-.color-picker-row span {
-  font-size: 0.7rem;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-}
-
-.toolbar-section input[type="range"] {
-  width: 100%;
-  margin-top: 0.25rem;
-}
-
-.swatch-grid {
-  margin-top: 0.26rem;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.24rem;
 }
 
 .swatch-button {
@@ -458,87 +109,19 @@
   box-shadow: inset 0 0 0 2px #f8f6f3, 0 0 0 1px #2f2827;
 }
 
-.style-list {
-  margin-top: 0.24rem;
-  display: grid;
-  gap: 0.2rem;
-}
-
-.style-preset-button {
-  border: 1px solid #b7ab9f;
-  border-radius: 6px;
-  background: #f5f0ea;
-  color: #2d2928;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px auto;
-  align-items: center;
-  gap: 0.32rem;
-  padding: 0.25rem 0.33rem;
-  font-size: 0.64rem;
-  cursor: pointer;
-}
-
-.style-preset-tool {
-  text-align: left;
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.style-preset-color {
-  width: 22px;
-  height: 12px;
-  border-radius: 999px;
-  border: 1px solid #9c9288;
-}
-
-.style-preset-size {
-  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
-}
-
-.toolbar-empty {
-  display: block;
-  margin-top: 0.2rem;
-  font-size: 0.61rem;
-  color: #5f5856;
-  letter-spacing: 0.01em;
-}
-
-.symbol-button-row .toolbar-button {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.8rem;
-  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
-  font-weight: 700;
-}
-
-.toolbar-toggle {
-  margin-top: 0.2rem;
-  border: 1px solid #c2b9ad;
-  border-radius: 7px;
-  padding: 0.4rem;
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.66rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: #f8f4ee;
-}
-
-.toolbar-toggle input {
-  margin: 0;
-}
+/* ─── Planner canvas sizing ───────────────────────────────────────────────── */
 
 .planner-previews {
   position: relative;
   width: min(
     1480px,
     calc(100vw - (var(--shell-pad-x) * 2)),
-    calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * 1.56)
+    calc(
+      (100dvh - (var(--shell-pad-y) * 2) - var(--floating-toolbar-height, 0px)) * 1.56
+    )
   );
   height: min(
-    calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
+    calc(100dvh - (var(--shell-pad-y) * 2) - var(--floating-toolbar-height, 0px)),
     calc((100vw - (var(--shell-pad-x) * 2)) * 0.64)
   );
   max-width: 100%;
@@ -547,6 +130,8 @@
   overflow: visible;
   touch-action: none;
 }
+
+/* ─── Planner visual structure ────────────────────────────────────────────── */
 
 .planner-spread {
   position: relative;
@@ -690,6 +275,8 @@
   outline: 2px solid #6f625d;
   outline-offset: 1px;
 }
+
+/* ─── Month view ──────────────────────────────────────────────────────────── */
 
 .month-paper {
   border-right: 1px solid #bcb3ad;
@@ -866,6 +453,8 @@
   color: #9d9891;
 }
 
+/* ─── Week view ───────────────────────────────────────────────────────────── */
+
 .week-paper {
   border-left: 1px solid #bcb3ad;
   overflow: visible;
@@ -961,6 +550,8 @@
   letter-spacing: 0.04em;
 }
 
+/* ─── Non-selectable text elements ────────────────────────────────────────── */
+
 .month-number,
 .month-meta-label,
 .month-meta-value span,
@@ -980,6 +571,8 @@
   user-select: none !important;
   -webkit-touch-callout: none !important;
 }
+
+/* ─── Notes / Journal pages ───────────────────────────────────────────────── */
 
 .notes-left-paper {
   border-right: 1px solid #bcb3ad;
@@ -1126,6 +719,8 @@
   bottom: 0.4rem;
 }
 
+/* ─── Month tabs ──────────────────────────────────────────────────────────── */
+
 .month-tabs {
   position: absolute;
   top: 0.9rem;
@@ -1134,10 +729,6 @@
   grid-template-rows: repeat(12, 1fr);
   gap: 0.15rem;
   z-index: 3;
-}
-
-.month-tabs-left {
-  left: -1.1rem;
 }
 
 .month-tabs-right {
@@ -1190,43 +781,34 @@
   outline-offset: 1px;
 }
 
-@media screen and (max-width: 1200px) {
-  .app-shell {
-    --toolbar-reserve: clamp(86px, 14vh, 138px);
-  }
+/* ─── Toolbar section helpers (kept for any remaining internal use) ────────── */
+
+.toolbar-section {
+  border: 1px solid #d1c8bc;
+  background: #f9f6f1;
+  border-radius: 7px;
+  padding: 0.36rem 0.38rem 0.4rem;
+  margin-bottom: 0.38rem;
 }
 
-@media screen and (max-width: 980px) {
-  .top-toolbar-toggle,
-  .styles-chip-row,
-  .symbols-chip-row {
-    margin-left: 0;
-  }
-
-  .top-ink-toolbar {
-    padding: 0.34rem;
-    gap: 0.25rem;
-  }
-
-  .planner-previews {
-    max-width: min(1240px, 100%);
-    width: min(
-      1240px,
-      calc(100vw - (var(--shell-pad-x) * 2)),
-      calc((100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)) * 1.56)
-    );
-    height: min(
-      calc(100dvh - (var(--shell-pad-y) * 2) - var(--toolbar-reserve)),
-      calc((100vw - (var(--shell-pad-x) * 2)) * 0.64)
-    );
-  }
+.toolbar-section h3 {
+  margin: 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
 }
+
+.tool-button-row {
+  margin-top: 0.3rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
 
 @media screen and (max-width: 740px) {
-  .top-toolbar-row {
-    gap: 0.24rem;
-  }
-
   .month-tabs {
     display: none;
   }

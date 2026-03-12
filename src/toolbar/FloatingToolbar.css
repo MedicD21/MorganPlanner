@@ -1,0 +1,681 @@
+/* ─── FloatingToolbar ─────────────────────────────────────────────────────────
+   Visual language: paper tones, warm ink, backdrop blur, soft shadows.
+   All ft-* classes live here.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Root containers ─────────────────────────────────────────────────────── */
+
+.ft-root {
+  position: fixed;
+  z-index: 900;
+  /* Children (overflow panel, color popover) are positioned relative to the
+     rail, so we need a containing block that doesn't create overflow. */
+  pointer-events: none; /* let clicks pass through root; children re-enable */
+}
+
+.ft-root > * {
+  pointer-events: auto;
+}
+
+/* Side mode: right edge, vertically centered */
+.ft-side {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Top mode: top edge, full width */
+.ft-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* ─── Rail ────────────────────────────────────────────────────────────────── */
+
+.ft-rail {
+  background: rgba(251, 250, 247, 0.96);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(45, 41, 40, 0.12);
+}
+
+/* Side rail: vertical pill on the right edge */
+.ft-rail-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 14px 0 0 14px;
+  border-right: none;
+  box-shadow: -2px 0 16px rgba(45, 41, 40, 0.12), -1px 0 4px rgba(45, 41, 40, 0.06);
+  min-width: 52px;
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.ft-rail-side::-webkit-scrollbar { display: none; }
+
+/* Top rail: horizontal strip across the top */
+.ft-rail-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  height: 52px;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  border-left: none;
+  border-right: none;
+  box-shadow: 0 2px 16px rgba(45, 41, 40, 0.12), 0 1px 4px rgba(45, 41, 40, 0.06);
+}
+
+/* Scrollable section of top rail content (everything after position toggles) */
+.ft-rail-top-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.ft-rail-top-content::-webkit-scrollbar { display: none; }
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
+/* Base tool button */
+.ft-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #2d2928;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  padding: 0;
+  gap: 2px;
+}
+.ft-tool-btn:hover {
+  background: rgba(143, 94, 107, 0.10);
+}
+.ft-tool-btn:active {
+  background: rgba(143, 94, 107, 0.18);
+}
+.ft-tool-btn.active,
+.ft-tool-btn[aria-pressed="true"] {
+  background: rgba(143, 94, 107, 0.18);
+  box-shadow: inset 0 0 0 1.5px rgba(143, 94, 107, 0.5);
+  color: #5c2d3c;
+}
+.ft-tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Larger tool button for overflow grid */
+.ft-tool-btn-lg {
+  width: 64px;
+  height: 52px;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+/* Collapse toggle — narrower */
+.ft-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #2d2928;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  padding: 0;
+}
+.ft-collapse-btn:hover { background: rgba(143, 94, 107, 0.10); }
+.ft-collapse-btn:active { background: rgba(143, 94, 107, 0.18); }
+
+/* Position toggle — same as tool btn but with text symbol */
+.ft-position-btn {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+/* Generic button variants */
+.ft-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(45, 41, 40, 0.18);
+  border-radius: 8px;
+  background: rgba(251, 250, 247, 0.8);
+  color: #2d2928;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: background 0.1s ease, box-shadow 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  white-space: nowrap;
+}
+.ft-btn:hover { background: rgba(143, 94, 107, 0.10); }
+.ft-btn:active { background: rgba(143, 94, 107, 0.18); }
+.ft-btn.active {
+  background: rgba(143, 94, 107, 0.18);
+  border-color: rgba(143, 94, 107, 0.5);
+  color: #5c2d3c;
+}
+.ft-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ft-btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.ft-btn-xs {
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+/* ─── Active indicator / color dot ───────────────────────────────────────── */
+
+.ft-active-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ft-color-dot-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(251, 250, 247, 0.9);
+  box-shadow: 0 0 0 1.5px rgba(45, 41, 40, 0.2), 0 2px 6px rgba(45, 41, 40, 0.15);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  flex-shrink: 0;
+  padding: 0;
+}
+.ft-color-dot-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px rgba(45, 41, 40, 0.25), 0 3px 8px rgba(45, 41, 40, 0.2);
+}
+.ft-color-dot-btn:active { transform: scale(0.95); }
+.ft-color-dot-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ─── Divider ─────────────────────────────────────────────────────────────── */
+
+/* In side mode, dividers are horizontal lines */
+.ft-rail-side .ft-divider {
+  width: 28px;
+  height: 1px;
+  background: rgba(45, 41, 40, 0.12);
+  flex-shrink: 0;
+  margin: 2px 0;
+}
+
+/* In top mode, dividers are vertical lines */
+.ft-rail-top .ft-divider,
+.ft-rail-top-content .ft-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(45, 41, 40, 0.12);
+  flex-shrink: 0;
+  margin: 0 3px;
+}
+
+/* ─── Tool label (inside overflow grid buttons) ───────────────────────────── */
+
+.ft-tool-label {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  color: inherit;
+  text-align: center;
+  letter-spacing: 0.1px;
+}
+
+/* ─── Overflow panel ──────────────────────────────────────────────────────── */
+
+.ft-overflow-panel {
+  position: fixed;
+  background: rgba(251, 250, 247, 0.97);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgba(45, 41, 40, 0.13);
+  border-radius: 16px;
+  width: 280px;
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(45, 41, 40, 0.15) transparent;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ft-overflow-panel::-webkit-scrollbar { width: 4px; }
+.ft-overflow-panel::-webkit-scrollbar-thumb {
+  background: rgba(45, 41, 40, 0.18);
+  border-radius: 2px;
+}
+
+/* Side mode: appears to the left of the rail */
+.ft-overflow-side {
+  right: 56px;
+  top: 50%;
+  transform: translateY(-50%);
+  box-shadow: -4px 4px 24px rgba(45, 41, 40, 0.14), -2px 2px 8px rgba(45, 41, 40, 0.08);
+}
+
+/* Top mode: appears below the rail */
+.ft-overflow-top {
+  top: 56px;
+  right: 16px;
+  box-shadow: 0 4px 24px rgba(45, 41, 40, 0.14), 0 2px 8px rgba(45, 41, 40, 0.08);
+}
+
+/* ─── Color popover ───────────────────────────────────────────────────────── */
+
+.ft-color-popover {
+  position: fixed;
+  background: rgba(251, 250, 247, 0.97);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgba(45, 41, 40, 0.13);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 216px;
+}
+
+.ft-color-popover-side {
+  right: 56px;
+  top: 50%;
+  transform: translateY(-50%);
+  box-shadow: -4px 4px 24px rgba(45, 41, 40, 0.14);
+}
+
+.ft-color-popover-top {
+  top: 56px;
+  left: 72px;
+  box-shadow: 0 4px 24px rgba(45, 41, 40, 0.14);
+}
+
+/* ─── Sections ────────────────────────────────────────────────────────────── */
+
+.ft-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(45, 41, 40, 0.08);
+}
+.ft-section:last-child { border-bottom: none; }
+
+.ft-section-label {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(45, 41, 40, 0.45);
+  line-height: 1;
+}
+
+.ft-section-label-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ─── Tool grid ───────────────────────────────────────────────────────────── */
+
+.ft-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 4px;
+}
+
+.ft-tool-grid-sm {
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+}
+
+/* ─── Quick slots ─────────────────────────────────────────────────────────── */
+
+.ft-slot-row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ft-slot-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ft-slot-label {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 10px;
+  color: rgba(45, 41, 40, 0.4);
+  line-height: 1;
+}
+
+.ft-slot-picker {
+  background: rgba(143, 94, 107, 0.06);
+  border: 1px solid rgba(143, 94, 107, 0.18);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ft-slot-picker-label {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(45, 41, 40, 0.6);
+}
+
+/* ─── Color swatches ──────────────────────────────────────────────────────── */
+
+.ft-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.ft-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 1px 3px rgba(45, 41, 40, 0.18);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  padding: 0;
+}
+.ft-swatch:hover { transform: scale(1.12); }
+.ft-swatch:active { transform: scale(0.95); }
+.ft-swatch.active {
+  border-color: rgba(251, 250, 247, 0.9);
+  box-shadow: 0 0 0 2.5px rgba(45, 41, 40, 0.5), 0 1px 4px rgba(45, 41, 40, 0.2);
+  transform: scale(1.08);
+}
+.ft-swatch:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* ─── Color row (picker + save) ───────────────────────────────────────────── */
+
+.ft-color-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.ft-color-picker {
+  width: 36px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(45, 41, 40, 0.18);
+  cursor: pointer;
+  padding: 2px;
+  background: rgba(251, 250, 247, 0.8);
+  flex-shrink: 0;
+}
+.ft-color-picker:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ─── Weight slider ───────────────────────────────────────────────────────── */
+
+.ft-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(45, 41, 40, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.ft-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(143, 94, 107, 0.85);
+  border: 2px solid rgba(251, 250, 247, 0.9);
+  box-shadow: 0 1px 4px rgba(45, 41, 40, 0.2);
+  cursor: pointer;
+}
+.ft-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(143, 94, 107, 0.85);
+  border: 2px solid rgba(251, 250, 247, 0.9);
+  box-shadow: 0 1px 4px rgba(45, 41, 40, 0.2);
+  cursor: pointer;
+}
+.ft-slider:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ─── Tip row ─────────────────────────────────────────────────────────────── */
+
+.ft-tip-row {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ft-tip-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tip preview lines */
+.ft-tip-line {
+  display: inline-block;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.ft-tip-round  { width: 2.5px; border-radius: 1.5px; }
+.ft-tip-fine   { width: 1px; }
+.ft-tip-fountain { width: 3px; clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 70%); }
+.ft-tip-marker { width: 5px; border-radius: 1px; opacity: 0.7; }
+.ft-tip-chisel { width: 4px; transform: skewX(-8deg); border-radius: 1px; }
+
+/* ─── Row helpers ─────────────────────────────────────────────────────────── */
+
+.ft-row {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+}
+
+.ft-row-wrap { flex-wrap: wrap; }
+
+/* ─── Symbol button ───────────────────────────────────────────────────────── */
+
+.ft-symbol-btn {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 16px;
+  min-width: 36px;
+}
+
+/* ─── Text input ──────────────────────────────────────────────────────────── */
+
+.ft-text-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(45, 41, 40, 0.18);
+  border-radius: 8px;
+  background: rgba(251, 250, 247, 0.9);
+  color: #2d2928;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+.ft-text-input:focus {
+  border-color: rgba(143, 94, 107, 0.5);
+  box-shadow: 0 0 0 2px rgba(143, 94, 107, 0.15);
+}
+
+/* ─── Saved styles ────────────────────────────────────────────────────────── */
+
+.ft-style-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.ft-style-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 7px 8px;
+  border: 1px solid rgba(45, 41, 40, 0.12);
+  border-radius: 9px;
+  background: rgba(251, 250, 247, 0.7);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  text-align: left;
+}
+.ft-style-btn:hover { background: rgba(143, 94, 107, 0.08); }
+.ft-style-btn:active { background: rgba(143, 94, 107, 0.16); }
+
+.ft-style-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(45, 41, 40, 0.2);
+}
+
+.ft-style-meta {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 11px;
+  color: rgba(45, 41, 40, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-delete-btn {
+  color: #8d2525;
+  border-color: rgba(141, 37, 37, 0.2);
+  flex-shrink: 0;
+}
+.ft-delete-btn:hover { background: rgba(141, 37, 37, 0.08); border-color: rgba(141, 37, 37, 0.4); }
+
+/* ─── Touch / toggle section ──────────────────────────────────────────────── */
+
+.ft-touch-section {
+  padding: 4px 0 8px;
+}
+
+.ft-toggle-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: #2d2928;
+  user-select: none;
+}
+
+.ft-toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: rgba(143, 94, 107, 0.85);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+
+.ft-empty {
+  font-family: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: rgba(45, 41, 40, 0.4);
+  margin: 0;
+  padding: 4px 0;
+  font-style: italic;
+}
+
+/* ─── Screen reader only ──────────────────────────────────────────────────── */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
