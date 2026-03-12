@@ -1244,6 +1244,10 @@ export default function InkLayer({
   const pointerFromTouchIdRef = useRef<Map<number, number>>(new Map());
   const touchStylusByPointerIdRef = useRef<Map<number, boolean>>(new Map());
   const stylusPointerIdsRef = useRef<Set<number>>(new Set());
+  // Pointer IDs waiting for their first pointermove before setPointerCapture is
+  // called. Deferring capture avoids a WKWebView/iOS bug where calling
+  // setPointerCapture immediately inside pointerdown triggers pointercancel.
+  const pendingCapturePtrRef = useRef<Set<number>>(new Set());
   const nextTouchPointerIdRef = useRef<number>(40000);
   const undoStackRef = useRef<InkDocument[]>([]);
   const redoStackRef = useRef<InkDocument[]>([]);
@@ -2538,11 +2542,26 @@ export default function InkLayer({
         activeLassoRef.current?.pointerId === event.pointerId ||
         activeLassoDragRef.current?.pointerId === event.pointerId
       ) {
-        surface.setPointerCapture(event.pointerId);
+        // Defer setPointerCapture to the first pointermove to avoid a WKWebView
+        // bug: calling setPointerCapture inside pointerdown triggers an immediate
+        // pointercancel, killing the stroke before it starts.
+        pendingCapturePtrRef.current.add(event.pointerId);
       }
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      // Resolve any deferred pointer capture now that we have confirmed movement.
+      if (pendingCapturePtrRef.current.has(event.pointerId)) {
+        pendingCapturePtrRef.current.delete(event.pointerId);
+        if (!surface.hasPointerCapture(event.pointerId)) {
+          try {
+            surface.setPointerCapture(event.pointerId);
+          } catch {
+            // setPointerCapture can throw if the pointer is no longer active.
+          }
+        }
+      }
+
       const stylus = stylusPointerIdsRef.current.has(event.pointerId);
       const suppressSystemUi =
         shouldSuppressSystemTouchUi(event.target) &&
@@ -2620,6 +2639,7 @@ export default function InkLayer({
 
       onEnd(pointerEvent);
       stylusPointerIdsRef.current.delete(event.pointerId);
+      pendingCapturePtrRef.current.delete(event.pointerId);
 
       if (surface.hasPointerCapture(event.pointerId)) {
         surface.releasePointerCapture(event.pointerId);
@@ -2817,6 +2837,7 @@ export default function InkLayer({
     pointerFromTouchIdRef.current.clear();
     touchStylusByPointerIdRef.current.clear();
     stylusPointerIdsRef.current.clear();
+    pendingCapturePtrRef.current.clear();
     activeStrokeRef.current = null;
     activeEraserPointerIdRef.current = null;
     activeShapeRef.current = null;
