@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -23,6 +23,7 @@
 		AC86E4D3586CB5F9B966A381 /* ThreeFingerUndoGestureBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68CF0A7BA8475A0E8D6E2D8A /* ThreeFingerUndoGestureBridge.swift */; };
 		C2A4E1E7AF32D852F64F0B04 /* FloatingToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D2FEF8A7007A5A2601B047 /* FloatingToolbarView.swift */; };
 		C4DF1A27584C24CB20C42880 /* PlannerStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12E7356C76FB335F15B7B71A /* PlannerStageView.swift */; };
+		C6E4F23499EF331B51739F18 /* FingerSwipeNavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4692691DD5AF5188AE37296 /* FingerSwipeNavigationOverlay.swift */; };
 		C994866F4C43300AB6F3A586 /* PlannerNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB3DA874F20C5FDB5FE2099 /* PlannerNativeApp.swift */; };
 		CA9DF6B743E3911D9A2E0B8C /* PencilInteractionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E9A820D8F68725B48CF050 /* PencilInteractionBridge.swift */; };
 		D7BD137EE309A52DF4FA1387 /* StickyNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51280FE66AA8014A180241B7 /* StickyNoteView.swift */; };
@@ -39,7 +40,7 @@
 		12E7356C76FB335F15B7B71A /* PlannerStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerStageView.swift; sourceTree = "<group>"; };
 		260734B52A056A18E50C94D0 /* PlannerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerStore.swift; sourceTree = "<group>"; };
 		2B18F24E25E50A2C16A10D47 /* MonthWeekSpreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthWeekSpreadView.swift; sourceTree = "<group>"; };
-		2DA6A966082EA97562ABC129 /* OnPurposePlannerNative.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnPurposePlannerNative.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2DA6A966082EA97562ABC129 /* OnPurposePlannerNative.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OnPurposePlannerNative.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F8D81133CE1ACB1B8C94B08 /* MonthTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthTabsView.swift; sourceTree = "<group>"; };
 		32F995903B5F6C8D7427A34C /* NotesSpreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesSpreadView.swift; sourceTree = "<group>"; };
 		361B3B6F5C4A218810D7FC0A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -55,6 +56,7 @@
 		8FAC6C7C8DD568D9FE48102F /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		C4D2FEF8A7007A5A2601B047 /* FloatingToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingToolbarView.swift; sourceTree = "<group>"; };
 		CC0809794E013A1894A3280E /* PlannerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerModels.swift; sourceTree = "<group>"; };
+		D4692691DD5AF5188AE37296 /* FingerSwipeNavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FingerSwipeNavigationOverlay.swift; sourceTree = "<group>"; };
 		D6E9A820D8F68725B48CF050 /* PencilInteractionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PencilInteractionBridge.swift; sourceTree = "<group>"; };
 		E08D888C7541DDDF481E4980 /* ToolbarOverflowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarOverflowPanel.swift; sourceTree = "<group>"; };
 		F922033C15F516964C46E395 /* PlannerPageSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPageSurface.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				3DAE4C2F094469D909E1615C /* DotGridBackground.swift */,
+				D4692691DD5AF5188AE37296 /* FingerSwipeNavigationOverlay.swift */,
 				2F8D81133CE1ACB1B8C94B08 /* MonthTabsView.swift */,
 				D6E9A820D8F68725B48CF050 /* PencilInteractionBridge.swift */,
 				12E7356C76FB335F15B7B71A /* PlannerStageView.swift */,
@@ -195,6 +198,7 @@
 			);
 			mainGroup = F8F9CE8018280833CD308A06;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -211,6 +215,7 @@
 				40037BCD98AFC69BCF4BD9F1 /* CalendarMath.swift in Sources */,
 				9B3F21BC8AE2E2B75C37A1D4 /* Color+Hex.swift in Sources */,
 				343E824C17EBE4BADF04070C /* DotGridBackground.swift in Sources */,
+				C6E4F23499EF331B51739F18 /* FingerSwipeNavigationOverlay.swift in Sources */,
 				C2A4E1E7AF32D852F64F0B04 /* FloatingToolbarView.swift in Sources */,
 				85B3056EA884CA2A170F8F68 /* InkCanvasView.swift in Sources */,
 				E15D4DF1F0BDF34141A66690 /* MonthTabsView.swift in Sources */,
@@ -298,7 +303,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 286LKF859M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OnPurposePlannerNative/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -318,7 +322,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 286LKF859M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OnPurposePlannerNative/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

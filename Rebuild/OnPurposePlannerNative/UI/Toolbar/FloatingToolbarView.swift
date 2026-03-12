@@ -67,7 +67,7 @@ struct FloatingToolbarView: View {
             .frame(width: 54)
             .background(toolbarRailBackground)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color.black.opacity(0.14), radius: 12, x: -2, y: 0)
+            .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 2)
         }
         .animation(.easeInOut(duration: 0.15), value: store.toolbarCollapsed)
         .animation(.easeInOut(duration: 0.12), value: overflowOpen)
@@ -88,7 +88,7 @@ struct FloatingToolbarView: View {
             .padding(.bottom, 6)
             .background(toolbarRailBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: Color.black.opacity(0.14), radius: 10, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 2)
 
             if !store.toolbarCollapsed && colorPopoverOpen {
                 colorPopover
@@ -108,13 +108,10 @@ struct FloatingToolbarView: View {
 
     private var toolbarRailBackground: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(
-                .ultraThinMaterial
-                    .opacity(0.95)
-            )
+            .fill(Color(hex: "#fbfaf7").opacity(0.96))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color(hex: "#2d2928").opacity(0.12), lineWidth: 1)
+                    .stroke(Color(hex: "#2d2928").opacity(0.14), lineWidth: 1)
             )
     }
 

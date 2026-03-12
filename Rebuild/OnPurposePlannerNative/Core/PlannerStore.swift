@@ -29,16 +29,23 @@ final class PlannerStore: ObservableObject {
     }
     @Published var activeColorHex: String = PlannerDefaults.defaultColor {
         didSet {
-            if !isValidHexColor(activeColorHex) {
-                activeColorHex = PlannerDefaults.defaultColor
+            let normalized = normalizedColorHex(activeColorHex)
+            guard normalized == activeColorHex else {
+                activeColorHex = normalized
+                return
             }
             scheduleSave()
         }
     }
     @Published var strokeSize: Double = PlannerDefaults.defaultStrokeSize {
         didSet {
-            strokeSize = clampStroke(strokeSize)
-            scheduleSave()
+            let clamped = clampStroke(strokeSize)
+            guard abs(clamped - strokeSize) > 0.0001 else {
+                scheduleSave()
+                return
+            }
+            strokeSize = clamped
+            return
         }
     }
     @Published var activeTip: InkTip = .round {
@@ -62,8 +69,13 @@ final class PlannerStore: ObservableObject {
 
     @Published var zoomScale: Double = PlannerDefaults.minZoom {
         didSet {
-            zoomScale = min(max(zoomScale, PlannerDefaults.minZoom), PlannerDefaults.maxZoom)
-            scheduleSave()
+            let clamped = clampZoomScale(zoomScale)
+            guard abs(clamped - zoomScale) > 0.0001 else {
+                scheduleSave()
+                return
+            }
+            zoomScale = clamped
+            return
         }
     }
     @Published var zoomOffsetX: Double = 0 {
@@ -81,8 +93,10 @@ final class PlannerStore: ObservableObject {
     }
     @Published var quickSlots: [PlannerTool] = PlannerDefaults.quickSlots {
         didSet {
-            if quickSlots.count != PlannerDefaults.quickSlots.count {
-                quickSlots = PlannerDefaults.quickSlots
+            let normalized = normalizedQuickSlots(quickSlots)
+            guard normalized == quickSlots else {
+                quickSlots = normalized
+                return
             }
             scheduleSave()
         }
@@ -268,20 +282,15 @@ final class PlannerStore: ObservableObject {
 
     func setMonth(_ targetMonth: Int) {
         let clamped = min(max(targetMonth, 1), 12)
-        if clamped == 1 && month == 12 {
-            year += 1
-        } else if clamped == 12 && month == 1 {
-            year -= 1
-        }
         month = clamped
         weekIndex = 0
         activeSpread = .monthWeek
     }
 
     func changeMonth(by offset: Int) {
-        let shifted = shiftMonth(year: year, month: month, offset: offset)
-        year = shifted.year
-        month = shifted.month
+        let base = month - 1
+        let wrapped = ((base + offset) % 12 + 12) % 12
+        month = wrapped + 1
         weekIndex = 0
         activeSpread = .monthWeek
     }
@@ -594,7 +603,7 @@ final class PlannerStore: ObservableObject {
     }
 
     private func setZoom(scale: Double, offsetX: Double, offsetY: Double, spreadSize: CGSize) {
-        let clampedScale = min(max(scale, PlannerDefaults.minZoom), PlannerDefaults.maxZoom)
+        let clampedScale = clampZoomScale(scale)
         let clampedOffset = clampOffset(x: offsetX, y: offsetY, scale: clampedScale, spreadSize: spreadSize)
         zoomScale = clampedScale
         zoomOffsetX = clampedOffset.x
@@ -617,18 +626,32 @@ final class PlannerStore: ObservableObject {
         month = min(max(month, 1), 12)
         weekIndex = min(max(weekIndex, 0), max(0, generateCalendar(year: year, month: month).weeks.count - 1))
         strokeSize = clampStroke(strokeSize)
-        if !isValidHexColor(activeColorHex) {
-            activeColorHex = PlannerDefaults.defaultColor
-        }
-        if quickSlots.count != PlannerDefaults.quickSlots.count {
-            quickSlots = PlannerDefaults.quickSlots
-        }
+        activeColorHex = normalizedColorHex(activeColorHex)
+        zoomScale = clampZoomScale(zoomScale)
+        quickSlots = normalizedQuickSlots(quickSlots)
         favoriteColors = favoriteColors.filter(isValidHexColor).prefix(PlannerDefaults.favoriteColorLimit).map { $0 }
         favoriteStyles = Array(favoriteStyles.prefix(PlannerDefaults.favoriteStyleLimit))
     }
 
+    private func normalizedColorHex(_ value: String) -> String {
+        let normalized = value.lowercased()
+        return isValidHexColor(normalized) ? normalized : PlannerDefaults.defaultColor
+    }
+
     private func clampStroke(_ value: Double) -> Double {
         min(max(value, PlannerDefaults.minStroke), PlannerDefaults.maxStroke)
+    }
+
+    private func clampZoomScale(_ value: Double) -> Double {
+        min(max(value, PlannerDefaults.minZoom), PlannerDefaults.maxZoom)
+    }
+
+    private func normalizedQuickSlots(_ slots: [PlannerTool]) -> [PlannerTool] {
+        var normalized = Array(slots.prefix(PlannerDefaults.quickSlots.count))
+        if normalized.count < PlannerDefaults.quickSlots.count {
+            normalized.append(contentsOf: PlannerDefaults.quickSlots.dropFirst(normalized.count))
+        }
+        return normalized
     }
 
     private func makeID() -> String {

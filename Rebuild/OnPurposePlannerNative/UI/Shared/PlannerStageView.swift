@@ -17,7 +17,7 @@ struct PlannerStageView: View {
                     y: store.zoomOffset.height + liveDragOffset.height
                 )
                 .simultaneousGesture(magnifyGesture)
-                .simultaneousGesture(panGesture)
+                .simultaneousGesture(panGesture, including: canPanStage ? .all : .subviews)
                 .overlay(
                     ThreeFingerUndoGestureBridge {
                         store.undoActivePage()
@@ -56,17 +56,21 @@ struct PlannerStageView: View {
     }
 
     private var panGesture: some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .local)
+        DragGesture(minimumDistance: 6, coordinateSpace: .local)
             .onChanged { value in
-                if (store.zoomScale * liveScaleMultiplier) > 1.01 {
+                if canPanStage {
                     liveDragOffset = value.translation
                 }
             }
             .onEnded { value in
-                if (store.zoomScale * liveScaleMultiplier) > 1.01 {
+                if canPanStage {
                     store.commitPan(translation: value.translation, spreadSize: spreadSize)
                 }
                 liveDragOffset = .zero
             }
+    }
+
+    private var canPanStage: Bool {
+        (store.zoomScale * liveScaleMultiplier) > 1.01
     }
 }

@@ -1,12 +1,27 @@
 import SwiftUI
 
+private enum MonthWeekLayout {
+    static let monthHeaderRatio: CGFloat = 0.15
+    static let monthWeekdayRatio: CGFloat = 0.038
+    static let weekTopRatio: CGFloat = 0.225
+}
+
 struct MonthWeekSpreadView: View {
     @EnvironmentObject private var store: PlannerStore
 
     var body: some View {
         SpreadScaffoldView(leftRatio: 1.55, rightRatio: 1) {
-            PlannerPageSurface(pageID: store.monthPageID, pageKind: .month) {
-                MonthPaperBackground(year: store.year, month: store.month)
+            ZStack {
+                PlannerPageSurface(pageID: store.monthPageID, pageKind: .month) {
+                    MonthPaperBackground(year: store.year, month: store.month)
+                }
+
+                FingerSwipeNavigationOverlay(
+                    axis: .vertical,
+                    isEnabled: fingerSwipeEnabled,
+                    onNegativeDirection: { store.changeMonth(by: 1) },
+                    onPositiveDirection: { store.changeMonth(by: -1) }
+                )
             }
             .simultaneousGesture(monthSwipeGesture)
         } right: {
@@ -14,6 +29,14 @@ struct MonthWeekSpreadView: View {
                 PlannerPageSurface(pageID: store.weekPageID, pageKind: .week) {
                     WeekPaperBackground()
                 }
+
+                FingerSwipeNavigationOverlay(
+                    axis: .horizontal,
+                    isEnabled: fingerSwipeEnabled,
+                    onNegativeDirection: { store.navigateWeek(by: 1) },
+                    onPositiveDirection: { store.navigateWeek(by: -1) }
+                )
+
                 WeekPageForeground(
                     calendar: store.calendarData,
                     week: store.selectedWeek,
@@ -25,9 +48,17 @@ struct MonthWeekSpreadView: View {
         }
     }
 
+    private var fingerSwipeEnabled: Bool {
+        store.activeSpread == .monthWeek &&
+        store.activeTool.supportsPencilKitDrawing &&
+        !store.allowFingerDrawing &&
+        store.zoomScale <= PlannerDefaults.minZoom + 0.01
+    }
+
     private var monthSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 28, coordinateSpace: .local)
+        DragGesture(minimumDistance: 30, coordinateSpace: .local)
             .onEnded { value in
+                guard !fingerSwipeEnabled else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
                 guard abs(dy) > 70, abs(dy) > abs(dx) * 1.2 else { return }
@@ -36,8 +67,9 @@ struct MonthWeekSpreadView: View {
     }
 
     private var weekSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 28, coordinateSpace: .local)
+        DragGesture(minimumDistance: 30, coordinateSpace: .local)
             .onEnded { value in
+                guard !fingerSwipeEnabled else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.2 else { return }
@@ -57,44 +89,53 @@ private struct MonthPaperBackground: View {
         let nextData = generateCalendar(year: next.year, month: next.month)
         let afterNextData = generateCalendar(year: afterNext.year, month: afterNext.month)
 
-        VStack(spacing: 0) {
-            VStack(spacing: 10) {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let headerHeight = max(74, size.height * MonthWeekLayout.monthHeaderRatio)
+            let weekdayHeight = max(20, size.height * MonthWeekLayout.monthWeekdayRatio)
+            let gridHeight = max(0, size.height - headerHeight - weekdayHeight)
+            let rowHeight = gridHeight / 6
+            let cellWidth = size.width / 7
+
+            VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 14) {
                     Text("\(month)")
-                        .font(.system(size: 66, weight: .bold, design: .rounded))
+                        .font(.system(size: min(74, max(46, headerHeight * 0.62)), weight: .bold))
                         .foregroundStyle(PlannerTheme.ink)
                         .frame(width: 84, alignment: .leading)
+                        .padding(.top, 8)
 
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         MonthMetaRow(label: "MONTH:", value: current.monthName.lowercased())
                         MonthMetaRow(label: "YEAR:", value: "\(current.year)")
                     }
-                    .padding(.top, 8)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.top, 10)
 
                     HStack(spacing: 10) {
                         MiniCalendarCard(calendar: nextData)
                         MiniCalendarCard(calendar: afterNextData)
                     }
+                    .frame(width: min(260, size.width * 0.34), alignment: .topTrailing)
+                    .padding(.top, 10)
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 8)
+                .frame(height: headerHeight)
                 .overlay(alignment: .bottom) {
                     Rectangle()
-                        .fill(PlannerTheme.line.opacity(0.9))
+                        .fill(PlannerTheme.line.opacity(0.95))
                         .frame(height: 1)
                 }
-            }
 
-            VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     ForEach(Array(weekdayInitials.enumerated()), id: \.offset) { _, day in
                         Text(day)
-                            .font(.system(size: 12, weight: .medium, design: .default))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 3)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(PlannerTheme.ink)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
+                .frame(height: weekdayHeight)
                 .overlay(alignment: .top) {
                     Rectangle().fill(PlannerTheme.line).frame(height: 1)
                 }
@@ -102,33 +143,36 @@ private struct MonthPaperBackground: View {
                     Rectangle().fill(PlannerTheme.line).frame(height: 1)
                 }
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+                VStack(spacing: 0) {
                     ForEach(Array(current.weeks.enumerated()), id: \.offset) { rowIndex, row in
-                        ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
-                            ZStack(alignment: .topLeading) {
-                                Rectangle().fill(Color.clear)
-                                Text("\(cell.dayNumber)")
-                                    .font(.system(size: 11, weight: .regular))
-                                    .foregroundStyle(cell.inMonth ? PlannerTheme.ink : Color(hex: "#9d9891"))
-                                    .padding(.leading, 4)
-                                    .padding(.top, 4)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .overlay(alignment: .bottom) {
-                                Rectangle().fill(PlannerTheme.line).frame(height: 1)
-                            }
-                            .overlay(alignment: .trailing) {
-                                Rectangle().fill(PlannerTheme.line).frame(width: 1)
-                            }
-                            .overlay(alignment: .leading) {
-                                if colIndex == 0 {
+                        HStack(spacing: 0) {
+                            ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
+                                ZStack(alignment: .topLeading) {
+                                    Color.clear
+                                    Text("\(cell.dayNumber)")
+                                        .font(.system(size: max(10, rowHeight * 0.12), weight: .regular))
+                                        .foregroundStyle(cell.inMonth ? PlannerTheme.ink : Color(hex: "#9d9891"))
+                                        .padding(.leading, 4)
+                                        .padding(.top, 4)
+                                }
+                                .frame(width: cellWidth, height: rowHeight, alignment: .topLeading)
+                                .overlay(alignment: .trailing) {
                                     Rectangle().fill(PlannerTheme.line).frame(width: 1)
                                 }
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(PlannerTheme.line).frame(height: 1)
+                                }
+                                .overlay(alignment: .leading) {
+                                    if colIndex == 0 {
+                                        Rectangle().fill(PlannerTheme.line).frame(width: 1)
+                                    }
+                                }
+                                .id("\(rowIndex)-\(colIndex)-\(cell.id)")
                             }
-                            .id("\(rowIndex)-\(colIndex)-\(cell.id)")
                         }
                     }
                 }
+                .frame(height: gridHeight)
             }
         }
     }
@@ -143,13 +187,19 @@ private struct MonthMetaRow: View {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
                 .tracking(1)
+                .frame(width: 52, alignment: .leading)
+
             ZStack(alignment: .bottom) {
                 Rectangle()
-                    .fill(PlannerTheme.line)
+                    .fill(PlannerTheme.line.opacity(0.85))
                     .frame(height: 1)
+                    .padding(.bottom, 3)
+
                 Text(value)
                     .font(.system(size: 24, weight: .medium, design: .serif))
-                    .padding(.horizontal, 6)
+                    .italic()
+                    .foregroundStyle(PlannerTheme.ink)
+                    .padding(.horizontal, 8)
                     .background(PlannerTheme.paper)
             }
             .frame(maxWidth: .infinity)
@@ -163,8 +213,9 @@ private struct MiniCalendarCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(calendar.monthName.uppercased())
-                .font(.system(size: 8, weight: .medium))
+                .font(.system(size: 9, weight: .medium))
                 .tracking(1)
+                .foregroundStyle(PlannerTheme.ink.opacity(0.85))
 
             HStack(spacing: 0) {
                 ForEach(Array(weekdayInitials.enumerated()), id: \.offset) { _, day in
@@ -180,13 +231,13 @@ private struct MiniCalendarCard: View {
                     ForEach(Array(week.enumerated()), id: \.offset) { _, cell in
                         Text(cell.inMonth ? "\(cell.dayNumber)" : "")
                             .font(.system(size: 7, weight: .regular))
-                            .foregroundStyle(PlannerTheme.ink.opacity(cell.inMonth ? 1 : 0.35))
+                            .foregroundStyle(PlannerTheme.ink.opacity(cell.inMonth ? 1 : 0.28))
                             .frame(maxWidth: .infinity)
                     }
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
@@ -194,8 +245,8 @@ private struct WeekPaperBackground: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let topSection = size.height * 0.24
-            let rowHeight = (size.height - topSection) / 7
+            let topSection = max(95, size.height * MonthWeekLayout.weekTopRatio)
+            let rowHeight = max(1, (size.height - topSection) / 7)
 
             VStack(spacing: 0) {
                 Color.clear
@@ -225,12 +276,16 @@ private struct WeekPageForeground: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Spacer(minLength: 8)
+
             Text(formatWeekRange(week))
-                .font(.system(size: 30, weight: .medium, design: .serif))
+                .font(.system(size: 46, weight: .medium, design: .serif))
                 .italic()
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .foregroundStyle(PlannerTheme.ink)
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
                 .overlay(alignment: .top) {
                     Rectangle().fill(PlannerTheme.line).frame(height: 1)
                 }
@@ -239,8 +294,11 @@ private struct WeekPageForeground: View {
                 }
 
             WeekTabsView(weeks: calendar.weeks, activeIndex: weekIndex)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color(hex: "#bcb3ad")).frame(height: 1)
+                }
 
             Button {
                 store.openSpread(.planning)
@@ -250,7 +308,7 @@ private struct WeekPageForeground: View {
                     .italic()
                     .foregroundStyle(PlannerTheme.ink)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 3)
             }
             .buttonStyle(.plain)
             .overlay(alignment: .bottom) {
@@ -262,18 +320,19 @@ private struct WeekPageForeground: View {
                     HStack {
                         Text("\(cell.dayNumber) \(weekdayShort[index])")
                             .font(.system(size: 12, weight: .medium))
-                            .tracking(0.6)
-                            .padding(.leading, 11)
+                            .tracking(0.7)
+                            .foregroundStyle(PlannerTheme.ink)
+                            .padding(.leading, 10)
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }
             }
-            .padding(.top, 2)
+            .padding(.top, 1)
         }
         .overlay(alignment: .trailing) {
             MonthTabsView(includeNotesTab: true)
-                .frame(width: 24)
+                .frame(width: 20)
                 .padding(.trailing, 1)
                 .padding(.vertical, 8)
         }

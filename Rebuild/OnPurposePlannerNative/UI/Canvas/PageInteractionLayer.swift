@@ -156,8 +156,8 @@ private struct ShapePreviewOverlay: View {
 private func bucketFillRects(for kind: PlannerPageKind, in size: CGSize) -> [CGRect] {
     switch kind {
     case .month:
-        let headerHeight = size.height * 0.30
-        let weekdayHeight = size.height * 0.055
+        let headerHeight = max(74, size.height * 0.15)
+        let weekdayHeight = max(20, size.height * 0.038)
         let gridTop = headerHeight + weekdayHeight
         let gridHeight = max(0, size.height - gridTop)
         let cellWidth = size.width / 7
@@ -178,7 +178,7 @@ private func bucketFillRects(for kind: PlannerPageKind, in size: CGSize) -> [CGR
         return rects
 
     case .week:
-        let top = size.height * 0.24
+        let top = max(95, size.height * 0.225)
         let rowHeight = max(1, (size.height - top) / 7)
         return (0..<7).map { index in
             CGRect(
