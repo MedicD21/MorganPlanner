@@ -2031,6 +2031,7 @@ export default function InkLayer({
 
     const onStart = (event: PointerLikeEvent) => {
       const canDraw = canDrawWithInput(event);
+      console.log("[ink] onStart", event.pointerId, event.pointerType, "canDraw:", canDraw, "activeStroke:", activeStrokeRef.current?.pointerId ?? null);
       if (!canDraw) {
         if (
           event.pointerType === "touch" &&
@@ -2063,6 +2064,7 @@ export default function InkLayer({
               "a, button, input, select, label, textarea, [data-sticky-note]",
             );
         if (blockedTarget) {
+          console.log("[ink] onStart blocked by", blockedTarget.tagName, blockedTarget.className);
           return;
         }
       }
@@ -2291,6 +2293,7 @@ export default function InkLayer({
         return;
       }
 
+      console.log("[ink] stroke STARTED", event.pointerId, "at", point.x.toFixed(1), point.y.toFixed(1));
       activeStrokeRef.current = {
         pointerId: event.pointerId,
         stroke: {
@@ -2493,6 +2496,7 @@ export default function InkLayer({
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      console.log("[ink] pointerdown", event.pointerId, event.pointerType, "pressure:", event.pressure, "target:", (event.target as HTMLElement)?.className ?? event.target);
       const stylus = isLikelyStylusPointer(event);
       if (stylus) {
         stylusPointerIdsRef.current.add(event.pointerId);
@@ -2601,6 +2605,7 @@ export default function InkLayer({
     };
 
     const finalizePointer = (event: PointerEvent) => {
+      console.log("[ink] finalize", event.type, event.pointerId, event.pointerType);
       const stylus = stylusPointerIdsRef.current.has(event.pointerId);
       const suppressSystemUi =
         shouldSuppressSystemTouchUi(event.target) &&
