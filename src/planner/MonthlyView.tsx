@@ -460,6 +460,11 @@ export default function MonthlyView({
       return;
     }
 
+    // Resting palm contacts typically report pressure === 0; skip them.
+    if (event.pressure === 0) {
+      return;
+    }
+
     weekSwipeStartRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -501,9 +506,16 @@ export default function MonthlyView({
       return;
     }
 
+    // Require a minimum gesture duration — instantaneous "flicks" are almost
+    // always accidental palm contacts, not intentional navigation.
+    const duration = Date.now() - swipeStart.startTime;
+    if (duration < 80) {
+      return;
+    }
+
     const deltaX = event.clientX - swipeStart.startX;
     const deltaY = event.clientY - swipeStart.startY;
-    const isHorizontalSwipe = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+    const isHorizontalSwipe = Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
     if (!isHorizontalSwipe) {
       return;
     }
@@ -531,6 +543,11 @@ export default function MonthlyView({
       if (event.target.closest("a, button")) {
         return;
       }
+    }
+
+    // Resting palm contacts typically report pressure === 0; skip them.
+    if (event.pressure === 0) {
+      return;
     }
 
     monthTouchPointersRef.current.add(event.pointerId);
@@ -581,10 +598,16 @@ export default function MonthlyView({
       return;
     }
 
+    // Require a minimum gesture duration — instantaneous palm flicks should not navigate.
+    const duration = Date.now() - swipeStart.startTime;
+    if (duration < 80) {
+      return;
+    }
+
     const deltaX = event.clientX - swipeStart.startX;
     const deltaY = event.clientY - swipeStart.startY;
     const isVerticalSwipe =
-      Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
+      Math.abs(deltaY) > 90 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
     if (!isVerticalSwipe || !onMonthChange) {
       return;
     }

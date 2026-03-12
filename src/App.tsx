@@ -415,10 +415,6 @@ export default function App() {
   useEffect(() => {
     // Keep the app fixed in-place on iPad while preserving pinch zoom.
     const preventSingleFingerPan = (event: TouchEvent) => {
-      if (zoomScaleRef.current > MIN_ZOOM_SCALE + 0.001) {
-        return;
-      }
-
       if (event.touches.length !== 1) {
         return;
       }
@@ -937,14 +933,19 @@ export default function App() {
       return;
     }
 
-    // Palm rejection: if an Apple Pencil is currently drawing, ignore all
-    // finger/palm touches so they don't interfere with ink strokes.
+    // Palm rejection: if an Apple Pencil is currently touching the screen, hard-
+    // block the palm touch from reaching ANY child handler (swipe navigation,
+    // etc.) by stopping propagation before the event reaches the bubbling phase.
     if (activeStylusPointerRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 
     if (shouldSkipStageTouchTracking(event.target)) {
-      resetStageTouchState();
+      // Don't track this pointer (it landed on a button/link) but don't wipe out
+      // any already-in-progress gesture — e.g. a second finger that lands on a
+      // MonthTab button shouldn't kill an ongoing pinch started elsewhere.
       return;
     }
 
