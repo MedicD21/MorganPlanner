@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MONTH_NAMES,
   WEEKDAY_INITIALS,
@@ -34,7 +34,6 @@ interface MonthlyViewProps {
   inkShapeKind?: "line" | "rectangle" | "ellipse" | "triangle";
   inkImageSrc?: string | null;
   inkEraseRadius?: number;
-  activeTouchCount?: number;
   onInkInputType?: (inputType: InkInputType) => void;
   onStickyNoteCreated?: () => void;
   onMonthChange?: (month: number) => void;
@@ -66,19 +65,6 @@ interface WeekTabsProps {
 const NOTES_RULED_LINE_COUNT = 24;
 type SpreadView = "month-week" | "planning" | "notes";
 
-function isLikelyStylusPointerEvent(event: React.PointerEvent<HTMLElement>): boolean {
-  if (event.pointerType === "pen") {
-    return true;
-  }
-
-  const nativeEvent = event.nativeEvent as PointerEvent & {
-    touchType?: string;
-  };
-  if (nativeEvent.touchType === "stylus") {
-    return true;
-  }
-  return false;
-}
 
 function updateHash(hashValue: string): void {
   const normalizedHash = hashValue.startsWith("#") ? hashValue : `#${hashValue}`;
@@ -89,26 +75,7 @@ function updateHash(hashValue: string): void {
   window.location.hash = normalizedHash;
 }
 
-function getGlobalActiveStageTouchCount(): number {
-  const plannerWindow = window as Window & {
-    __plannerActiveStageTouchCount?: number;
-  };
-  const count = plannerWindow.__plannerActiveStageTouchCount;
-  if (typeof count !== "number" || !Number.isFinite(count)) {
-    return 0;
-  }
-  return Math.max(0, count);
-}
 
-// Returns true when an Apple Pencil is currently touching the screen OR was
-// active within the last 600ms. Used to suppress palm-triggered navigation
-// swipes while the user is writing.
-function penBlocksSwipe(): boolean {
-  const w = window as Window & { __plannerStylusActive?: boolean; __plannerLastPenMs?: number };
-  if (w.__plannerStylusActive === true) return true;
-  const lastMs = w.__plannerLastPenMs;
-  return typeof lastMs === "number" && Date.now() - lastMs < 600;
-}
 
 function getMonthWeekId(
   pageSet: string,
@@ -330,7 +297,6 @@ export default function MonthlyView({
   inkShapeKind = "line",
   inkImageSrc = null,
   inkEraseRadius = 14,
-  activeTouchCount = 0,
   onInkInputType,
   onStickyNoteCreated,
   onMonthChange,
@@ -347,20 +313,6 @@ export default function MonthlyView({
 
   const nextMonth = shiftMonth(year, month, 1);
   const monthAfterNext = shiftMonth(year, month, 2);
-  const weekSwipeStartRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    startTime: number;
-  } | null>(null);
-  const monthSwipeStartRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    startTime: number;
-  } | null>(null);
-  const monthTouchPointersRef = useRef<Set<number>>(new Set());
-  const monthSwipeBlockedByMultiTouchRef = useRef<boolean>(false);
 
   const weekTitle = formatWeekRange(selectedWeek);
 
@@ -430,205 +382,54 @@ export default function MonthlyView({
     safeWeekIndex,
   ]);
 
+  // 2-finger swipe navigation: horizontal = week, vertical = month.
+  // The gesture is detected in App.tsx (which owns all multi-touch state) and
+  // broadcast here so it's completely decoupled from single-finger/palm events.
   useEffect(() => {
-    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
-      monthSwipeBlockedByMultiTouchRef.current = true;
-      monthSwipeStartRef.current = null;
-      return;
-    }
+    const handleTwoFingerSwipe = (event: Event) => {
+      const { deltaX, deltaY } = (event as CustomEvent<{ deltaX: number; deltaY: number }>).detail;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
 
-    if (activeTouchCount === 0 && monthTouchPointersRef.current.size === 0) {
-      monthSwipeBlockedByMultiTouchRef.current = false;
-    }
-  }, [activeTouchCount]);
-
-  if (!showMonthWeek && !showNotes) {
-    return null;
-  }
-
-  const handleWeekSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
-      return;
-    }
-
-    // Block swipe if pencil was used recently — palm contacts must not navigate.
-    if (penBlocksSwipe() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
-      return;
-    }
-
-    if (event.target instanceof HTMLElement && event.target.closest("a, button")) {
-      return;
-    }
-
-    // Resting palm contacts typically report pressure === 0; skip them.
-    if (event.pressure === 0) {
-      return;
-    }
-
-    weekSwipeStartRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startTime: Date.now(),
+      if (absX > absY && absX > 40) {
+        // Horizontal → navigate weeks (only on month-week view).
+        if (activeView !== "month-week" || !onWeekIndexChange) return;
+        const nextIndex = deltaX < 0 ? safeWeekIndex + 1 : safeWeekIndex - 1;
+        const clampedIndex = Math.max(0, Math.min(calendarData.weeks.length - 1, nextIndex));
+        if (clampedIndex === safeWeekIndex) return;
+        onWeekIndexChange(clampedIndex);
+        updateHash(`#${getMonthWeekId(pageSet, month, clampedIndex)}`);
+      } else if (absY > absX && absY > 40) {
+        // Vertical → navigate months.
+        if (!onMonthChange) return;
+        const nextMonth =
+          deltaY < 0
+            ? month === 12 ? 1 : month + 1
+            : month === 1 ? 12 : month - 1;
+        onMonthChange(nextMonth);
+        updateHash(`#${getMonthWeekId(pageSet, nextMonth, 0)}`);
+      }
     };
-  };
+
+    window.addEventListener("planner-2finger-swipe", handleTwoFingerSwipe);
+    return () => window.removeEventListener("planner-2finger-swipe", handleTwoFingerSwipe);
+  }, [
+    activeView,
+    calendarData.weeks.length,
+    month,
+    onMonthChange,
+    onWeekIndexChange,
+    pageSet,
+    safeWeekIndex,
+  ]);
 
   const navigateToWeek = (nextWeekIndex: number) => {
-    if (!onWeekIndexChange) {
-      return;
-    }
-
-    const clampedIndex = Math.max(
-      0,
-      Math.min(calendarData.weeks.length - 1, nextWeekIndex),
-    );
-    if (clampedIndex === safeWeekIndex) {
-      return;
-    }
-
+    if (!onWeekIndexChange) return;
+    const clampedIndex = Math.max(0, Math.min(calendarData.weeks.length - 1, nextWeekIndex));
+    if (clampedIndex === safeWeekIndex) return;
     setActiveView("month-week");
     onWeekIndexChange(clampedIndex);
     updateHash(`#${getMonthWeekId(pageSet, month, clampedIndex)}`);
-  };
-
-  const handleWeekSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
-    const swipeStart = weekSwipeStartRef.current;
-    if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
-      return;
-    }
-
-    weekSwipeStartRef.current = null;
-
-    // Cancel if a pen (Apple Pencil) became active at any point after this swipe
-    // started — the touch was a palm contact, not an intentional navigation gesture.
-    const lastPenMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs ?? 0;
-    if (lastPenMs >= swipeStart.startTime) {
-      return;
-    }
-
-    // Require a minimum gesture duration — instantaneous "flicks" are almost
-    // always accidental palm contacts, not intentional navigation.
-    const duration = Date.now() - swipeStart.startTime;
-    if (duration < 80) {
-      return;
-    }
-
-    const deltaX = event.clientX - swipeStart.startX;
-    const deltaY = event.clientY - swipeStart.startY;
-    const isHorizontalSwipe = Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
-    if (!isHorizontalSwipe) {
-      return;
-    }
-
-    const nextIndex = deltaX < 0 ? safeWeekIndex + 1 : safeWeekIndex - 1;
-    navigateToWeek(nextIndex);
-  };
-
-  const clearWeekSwipe = () => {
-    weekSwipeStartRef.current = null;
-  };
-
-  const handleMonthSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.pointerType !== "touch" || isLikelyStylusPointerEvent(event)) {
-      return;
-    }
-
-    if (penBlocksSwipe() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
-      monthSwipeBlockedByMultiTouchRef.current = true;
-      monthSwipeStartRef.current = null;
-      return;
-    }
-
-    if (event.target instanceof HTMLElement) {
-      if (event.target.closest("a, button")) {
-        return;
-      }
-    }
-
-    // Resting palm contacts typically report pressure === 0; skip them.
-    if (event.pressure === 0) {
-      return;
-    }
-
-    monthTouchPointersRef.current.add(event.pointerId);
-    if (monthTouchPointersRef.current.size > 1) {
-      monthSwipeBlockedByMultiTouchRef.current = true;
-      monthSwipeStartRef.current = null;
-      return;
-    }
-
-    monthSwipeStartRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startTime: Date.now(),
-    };
-  };
-
-  const handleMonthSwipeEnd = (event: React.PointerEvent<HTMLElement>) => {
-    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
-      monthSwipeBlockedByMultiTouchRef.current = true;
-      monthSwipeStartRef.current = null;
-      return;
-    }
-
-    if (event.pointerType === "touch") {
-      monthTouchPointersRef.current.delete(event.pointerId);
-    }
-
-    const blockedByMultiTouch = monthSwipeBlockedByMultiTouchRef.current;
-    if (monthTouchPointersRef.current.size === 0) {
-      monthSwipeBlockedByMultiTouchRef.current = false;
-    }
-    if (blockedByMultiTouch) {
-      monthSwipeStartRef.current = null;
-      return;
-    }
-
-    const swipeStart = monthSwipeStartRef.current;
-    if (!swipeStart || swipeStart.pointerId !== event.pointerId) {
-      return;
-    }
-
-    monthSwipeStartRef.current = null;
-
-    // Cancel if a pen became active after this swipe started (palm rejection).
-    const lastPenMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs ?? 0;
-    if (lastPenMs >= swipeStart.startTime) {
-      return;
-    }
-
-    // Require a minimum gesture duration — instantaneous palm flicks should not navigate.
-    const duration = Date.now() - swipeStart.startTime;
-    if (duration < 80) {
-      return;
-    }
-
-    const deltaX = event.clientX - swipeStart.startX;
-    const deltaY = event.clientY - swipeStart.startY;
-    const isVerticalSwipe =
-      Math.abs(deltaY) > 90 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
-    if (!isVerticalSwipe || !onMonthChange) {
-      return;
-    }
-
-    const nextMonth =
-      deltaY < 0
-        ? month === 12
-          ? 1
-          : month + 1
-        : month === 1
-          ? 12
-          : month - 1;
-
-    onMonthChange(nextMonth);
-    updateHash(`#${getMonthWeekId(pageSet, nextMonth, 0)}`);
-  };
-
-  const clearMonthSwipe = () => {
-    monthSwipeStartRef.current = null;
-    monthTouchPointersRef.current.clear();
-    monthSwipeBlockedByMultiTouchRef.current = false;
   };
 
   const openPlanningPage = () => {
@@ -646,23 +447,6 @@ export default function MonthlyView({
           <article
             className="planner-paper month-paper"
             onContextMenu={(e) => e.preventDefault()}
-            onPointerDown={handleMonthSwipeStart}
-            onPointerMove={(event) => {
-              if (
-                event.pointerType === "touch" &&
-                Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1
-              ) {
-                monthSwipeBlockedByMultiTouchRef.current = true;
-                monthSwipeStartRef.current = null;
-              }
-              // Cancel mid-swipe the moment a pen is detected — direct palm rejection.
-              if (monthSwipeStartRef.current && event.pointerType === "touch" && penBlocksSwipe()) {
-                monthSwipeStartRef.current = null;
-              }
-            }}
-            onPointerUp={handleMonthSwipeEnd}
-            onPointerCancel={clearMonthSwipe}
-            onPointerLeave={clearMonthSwipe}
           >
             <header className="month-header">
               <div className="month-number">{month}</div>
@@ -732,15 +516,6 @@ export default function MonthlyView({
           <article
             className="planner-paper week-paper"
             onContextMenu={(e) => e.preventDefault()}
-            onPointerDown={handleWeekSwipeStart}
-            onPointerMove={(event) => {
-              // Cancel mid-swipe the moment a pen is detected — direct palm rejection.
-              if (weekSwipeStartRef.current && event.pointerType === "touch" && penBlocksSwipe()) {
-                weekSwipeStartRef.current = null;
-              }
-            }}
-            onPointerUp={handleWeekSwipeEnd}
-            onPointerCancel={clearWeekSwipe}
           >
             <MonthTabs
               activeMonth={month}

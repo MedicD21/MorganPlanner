@@ -122,6 +122,15 @@ interface PinchGestureState {
   startRectTop: number;
   contentX: number;
   contentY: number;
+  /** Center-point at gesture start — used to detect 2-finger swipe vs pinch. */
+  centerStartX: number;
+  centerStartY: number;
+  /**
+   * "unknown"  — not yet classified (waiting for first significant movement)
+   * "pinch"    — scale is changing → zoom gesture
+   * "swipe"    — fingers moving together → navigation gesture
+   */
+  gestureType: "unknown" | "pinch" | "swipe";
 }
 
 interface TouchGestureMeta {
@@ -307,7 +316,6 @@ export default function App() {
     x: 0,
     y: 0,
   });
-  const [activeStageTouchCount, setActiveStageTouchCount] = useState<number>(0);
   const [imageStampSrc, setImageStampSrc] = useState<string | null>(null);
   const [favoriteColors, setFavoriteColors] = useState<string[]>(
     loadFavoriteColors,
@@ -765,17 +773,16 @@ export default function App() {
       startRectTop: rect.top,
       contentX: (centerX - rect.left) / currentScale,
       contentY: (centerY - rect.top) / currentScale,
+      centerStartX: centerX,
+      centerStartY: centerY,
+      gestureType: "unknown",
     };
   };
 
   const syncActiveStageTouchCount = useCallback(() => {
-    const nextCount = activeTouchPointsRef.current.size;
     (window as Window & { __plannerActiveStageTouchCount?: number })[
       ACTIVE_STAGE_TOUCH_COUNT_KEY
-    ] = nextCount;
-    setActiveStageTouchCount((currentCount) =>
-      currentCount === nextCount ? currentCount : nextCount,
-    );
+    ] = activeTouchPointsRef.current.size;
   }, []);
 
   const clearBrowserSelection = useCallback(() => {
@@ -826,7 +833,6 @@ export default function App() {
     (window as Window & { __plannerActiveStageTouchCount?: number })[
       ACTIVE_STAGE_TOUCH_COUNT_KEY
     ] = 0;
-    setActiveStageTouchCount(0);
   }, []);
 
   useEffect(() => {
@@ -1101,6 +1107,28 @@ export default function App() {
     const centerX = (firstPoint.x + secondPoint.x) / 2;
     const centerY = (firstPoint.y + secondPoint.y) / 2;
 
+    // Classify the gesture on first significant movement if still unknown.
+    if (pinch.gestureType === "unknown") {
+      const scaleChange = Math.abs(currentDistance / pinch.startDistance - 1);
+      const centerMove = Math.hypot(
+        centerX - pinch.centerStartX,
+        centerY - pinch.centerStartY,
+      );
+      if (scaleChange > 0.06) {
+        pinch.gestureType = "pinch";
+      } else if (centerMove > 12) {
+        pinch.gestureType = "swipe";
+      }
+    }
+
+    // 2-finger swipe: fingers moving together — navigation, not zoom.
+    // Just consume the event so it doesn't leak to child handlers.
+    if (pinch.gestureType === "swipe") {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const nextScale = clampValue(
       pinch.startScale * (currentDistance / pinch.startDistance),
       MIN_ZOOM_SCALE,
@@ -1150,6 +1178,26 @@ export default function App() {
     }
 
     const hadPinch = pinchGestureRef.current !== null;
+
+    // Capture 2-finger swipe data before we delete this pointer.
+    // We recognise the gesture when the first of the two fingers lifts.
+    let twoFingerSwipeDelta: { deltaX: number; deltaY: number } | null = null;
+    if (
+      pinchGestureRef.current?.gestureType === "swipe" &&
+      activeTouchPointsRef.current.size === 2
+    ) {
+      const otherPoint = Array.from(activeTouchPointsRef.current.entries())
+        .find(([id]) => id !== event.pointerId)?.[1];
+      if (otherPoint) {
+        const endCenterX = (event.clientX + otherPoint.x) / 2;
+        const endCenterY = (event.clientY + otherPoint.y) / 2;
+        twoFingerSwipeDelta = {
+          deltaX: endCenterX - pinchGestureRef.current.centerStartX,
+          deltaY: endCenterY - pinchGestureRef.current.centerStartY,
+        };
+      }
+    }
+
     const threeFingerTap = activeThreeFingerTapRef.current;
     const releasedFromThreeFingerTap =
       threeFingerTap?.pointerIds.includes(event.pointerId) ?? false;
@@ -1215,6 +1263,13 @@ export default function App() {
     if (hadPinch || releasedFromThreeFingerTap) {
       event.preventDefault();
       event.stopPropagation();
+    }
+
+    // Fire navigation event for 2-finger swipe gestures.
+    if (twoFingerSwipeDelta) {
+      window.dispatchEvent(
+        new CustomEvent("planner-2finger-swipe", { detail: twoFingerSwipeDelta }),
+      );
     }
   };
 
@@ -1442,7 +1497,6 @@ export default function App() {
               inkShapeKind={shapeKind}
               inkImageSrc={activeTool === "image" ? imageStampSrc : null}
               inkEraseRadius={eraseRadius}
-              activeTouchCount={activeStageTouchCount}
               onMonthChange={handleMonthTabChange}
               onWeekIndexChange={handleWeekTabChange}
               onStickyNoteCreated={handleStickyNoteCreated}
