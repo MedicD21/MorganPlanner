@@ -861,6 +861,9 @@ export default function App() {
     const handleStylusDown = (event: PointerEvent) => {
       if (event.pointerType === "pen") {
         activeStylusPointerRef.current = true;
+        // Stamp the window with the last pen-contact time so MonthlyView swipe
+        // handlers can block palm-triggered navigation while writing.
+        (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs = Date.now();
       }
     };
     const handleStylusUp = (event: PointerEvent) => {

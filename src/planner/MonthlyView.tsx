@@ -100,6 +100,13 @@ function getGlobalActiveStageTouchCount(): number {
   return Math.max(0, count);
 }
 
+// Returns true if an Apple Pencil has touched the screen within the last 600ms.
+// Used to suppress palm-triggered navigation swipes while the user is writing.
+function penRecentlyActive(): boolean {
+  const lastMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs;
+  return typeof lastMs === "number" && Date.now() - lastMs < 600;
+}
+
 function getMonthWeekId(
   pageSet: string,
   month: number,
@@ -439,6 +446,11 @@ export default function MonthlyView({
       return;
     }
 
+    // Block swipe if pencil was used recently — palm contacts must not navigate.
+    if (penRecentlyActive() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+      return;
+    }
+
     if (event.target instanceof HTMLElement && event.target.closest("a, button")) {
       return;
     }
@@ -496,7 +508,7 @@ export default function MonthlyView({
       return;
     }
 
-    if (Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+    if (penRecentlyActive() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
       monthSwipeBlockedByMultiTouchRef.current = true;
       monthSwipeStartRef.current = null;
       return;
