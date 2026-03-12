@@ -320,6 +320,7 @@ export default function App() {
   const lastNonEraserToolRef = useRef<InkTool>("pen");
   const preferredPencilActionRef = useRef<string>("switchEraser");
   const lastDrawingToolRef = useRef<InkTool>("pen");
+  const activeStylusPointerRef = useRef<boolean>(false);
   const activeTouchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
   const touchGestureMetaRef = useRef<Map<number, TouchGestureMeta>>(new Map());
   const pinchGestureRef = useRef<PinchGestureState | null>(null);
@@ -690,12 +691,16 @@ export default function App() {
       }
 
       if (interactiveElement instanceof HTMLButtonElement) {
+        event.preventDefault();
         interactiveElement.focus();
+        interactiveElement.click();
         return;
       }
 
       if (interactiveElement instanceof HTMLAnchorElement) {
+        event.preventDefault();
         interactiveElement.focus();
+        interactiveElement.click();
       }
     },
     [],
@@ -850,6 +855,35 @@ export default function App() {
     };
   }, [resetStageTouchState]);
 
+  // Track whether a stylus (Apple Pencil) is currently in contact so we can
+  // suppress palm-touch events that slip through during zoomed-in writing.
+  useEffect(() => {
+    const handleStylusDown = (event: PointerEvent) => {
+      if (event.pointerType === "pen") {
+        activeStylusPointerRef.current = true;
+      }
+    };
+    const handleStylusUp = (event: PointerEvent) => {
+      if (event.pointerType === "pen") {
+        activeStylusPointerRef.current = false;
+        // Also clear any stale touch points that snuck in during stylus contact.
+        activeTouchPointsRef.current.clear();
+        touchGestureMetaRef.current.clear();
+        pinchGestureRef.current = null;
+        activeThreeFingerTapRef.current = null;
+        syncActiveStageTouchCount();
+      }
+    };
+    window.addEventListener("pointerdown", handleStylusDown, true);
+    window.addEventListener("pointerup", handleStylusUp, true);
+    window.addEventListener("pointercancel", handleStylusUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", handleStylusDown, true);
+      window.removeEventListener("pointerup", handleStylusUp, true);
+      window.removeEventListener("pointercancel", handleStylusUp, true);
+    };
+  }, [syncActiveStageTouchCount]);
+
   useEffect(() => {
     const releaseTrackedTouchPointer = (pointerId: number) => {
       const hadTrackedPointer = activeTouchPointsRef.current.delete(pointerId);
@@ -895,6 +929,12 @@ export default function App() {
     }
 
     if (event.pointerType !== "touch") {
+      return;
+    }
+
+    // Palm rejection: if an Apple Pencil is currently drawing, ignore all
+    // finger/palm touches so they don't interfere with ink strokes.
+    if (activeStylusPointerRef.current) {
       return;
     }
 

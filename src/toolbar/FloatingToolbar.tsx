@@ -325,7 +325,7 @@ export default function FloatingToolbar(props: FloatingToolbarProps) {
 
   // Update CSS variable so the canvas shrinks correctly in top mode.
   useLayoutEffect(() => {
-    const height = position === "top" && !collapsed ? "52px" : "0px";
+    const height = position === "top" && !collapsed ? "calc(env(safe-area-inset-top) + 52px)" : "0px";
     document.documentElement.style.setProperty("--floating-toolbar-height", height);
     return () => {
       document.documentElement.style.setProperty("--floating-toolbar-height", "0px");

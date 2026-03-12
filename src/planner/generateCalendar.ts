@@ -13,8 +13,8 @@ export const MONTH_NAMES = [
   "December",
 ] as const;
 
-export const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"] as const;
-export const WEEKDAY_SHORT = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
+export const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
+export const WEEKDAY_SHORT = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
 
 export type WeekdayShort = (typeof WEEKDAY_SHORT)[number];
 
@@ -33,13 +33,10 @@ export interface CalendarMonth {
   weeks: CalendarCell[][];
 }
 
-function toMondayBasedDay(day: number): number {
-  return (day + 6) % 7;
-}
-
 export function generateCalendar(year: number, month: number): CalendarMonth {
   const firstOfMonth = new Date(year, month - 1, 1);
-  const firstWeekdayOffset = toMondayBasedDay(firstOfMonth.getDay());
+  // getDay() returns 0=Sunday … 6=Saturday, which matches our Sunday-first grid.
+  const firstWeekdayOffset = firstOfMonth.getDay();
   const gridStart = new Date(year, month - 1, 1 - firstWeekdayOffset);
 
   const weeks: CalendarCell[][] = [];
