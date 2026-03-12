@@ -100,10 +100,13 @@ function getGlobalActiveStageTouchCount(): number {
   return Math.max(0, count);
 }
 
-// Returns true if an Apple Pencil has touched the screen within the last 600ms.
-// Used to suppress palm-triggered navigation swipes while the user is writing.
-function penRecentlyActive(): boolean {
-  const lastMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs;
+// Returns true when an Apple Pencil is currently touching the screen OR was
+// active within the last 600ms. Used to suppress palm-triggered navigation
+// swipes while the user is writing.
+function penBlocksSwipe(): boolean {
+  const w = window as Window & { __plannerStylusActive?: boolean; __plannerLastPenMs?: number };
+  if (w.__plannerStylusActive === true) return true;
+  const lastMs = w.__plannerLastPenMs;
   return typeof lastMs === "number" && Date.now() - lastMs < 600;
 }
 
@@ -348,11 +351,13 @@ export default function MonthlyView({
     pointerId: number;
     startX: number;
     startY: number;
+    startTime: number;
   } | null>(null);
   const monthSwipeStartRef = useRef<{
     pointerId: number;
     startX: number;
     startY: number;
+    startTime: number;
   } | null>(null);
   const monthTouchPointersRef = useRef<Set<number>>(new Set());
   const monthSwipeBlockedByMultiTouchRef = useRef<boolean>(false);
@@ -447,7 +452,7 @@ export default function MonthlyView({
     }
 
     // Block swipe if pencil was used recently — palm contacts must not navigate.
-    if (penRecentlyActive() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+    if (penBlocksSwipe() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
       return;
     }
 
@@ -459,6 +464,7 @@ export default function MonthlyView({
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      startTime: Date.now(),
     };
   };
 
@@ -488,6 +494,13 @@ export default function MonthlyView({
 
     weekSwipeStartRef.current = null;
 
+    // Cancel if a pen (Apple Pencil) became active at any point after this swipe
+    // started — the touch was a palm contact, not an intentional navigation gesture.
+    const lastPenMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs ?? 0;
+    if (lastPenMs >= swipeStart.startTime) {
+      return;
+    }
+
     const deltaX = event.clientX - swipeStart.startX;
     const deltaY = event.clientY - swipeStart.startY;
     const isHorizontalSwipe = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
@@ -508,7 +521,7 @@ export default function MonthlyView({
       return;
     }
 
-    if (penRecentlyActive() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
+    if (penBlocksSwipe() || Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1) {
       monthSwipeBlockedByMultiTouchRef.current = true;
       monthSwipeStartRef.current = null;
       return;
@@ -531,6 +544,7 @@ export default function MonthlyView({
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      startTime: Date.now(),
     };
   };
 
@@ -560,6 +574,12 @@ export default function MonthlyView({
     }
 
     monthSwipeStartRef.current = null;
+
+    // Cancel if a pen became active after this swipe started (palm rejection).
+    const lastPenMs = (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs ?? 0;
+    if (lastPenMs >= swipeStart.startTime) {
+      return;
+    }
 
     const deltaX = event.clientX - swipeStart.startX;
     const deltaY = event.clientY - swipeStart.startY;
@@ -610,6 +630,10 @@ export default function MonthlyView({
                 Math.max(activeTouchCount, getGlobalActiveStageTouchCount()) > 1
               ) {
                 monthSwipeBlockedByMultiTouchRef.current = true;
+                monthSwipeStartRef.current = null;
+              }
+              // Cancel mid-swipe the moment a pen is detected — direct palm rejection.
+              if (monthSwipeStartRef.current && event.pointerType === "touch" && penBlocksSwipe()) {
                 monthSwipeStartRef.current = null;
               }
             }}
@@ -686,6 +710,12 @@ export default function MonthlyView({
             className="planner-paper week-paper"
             onContextMenu={(e) => e.preventDefault()}
             onPointerDown={handleWeekSwipeStart}
+            onPointerMove={(event) => {
+              // Cancel mid-swipe the moment a pen is detected — direct palm rejection.
+              if (weekSwipeStartRef.current && event.pointerType === "touch" && penBlocksSwipe()) {
+                weekSwipeStartRef.current = null;
+              }
+            }}
             onPointerUp={handleWeekSwipeEnd}
             onPointerCancel={clearWeekSwipe}
           >

@@ -861,14 +861,16 @@ export default function App() {
     const handleStylusDown = (event: PointerEvent) => {
       if (event.pointerType === "pen") {
         activeStylusPointerRef.current = true;
-        // Stamp the window with the last pen-contact time so MonthlyView swipe
-        // handlers can block palm-triggered navigation while writing.
+        // Stamp the window with pen-active state and last pen-contact time so
+        // MonthlyView swipe handlers can block palm-triggered navigation.
+        (window as Window & { __plannerStylusActive?: boolean; __plannerLastPenMs?: number }).__plannerStylusActive = true;
         (window as Window & { __plannerLastPenMs?: number }).__plannerLastPenMs = Date.now();
       }
     };
     const handleStylusUp = (event: PointerEvent) => {
       if (event.pointerType === "pen") {
         activeStylusPointerRef.current = false;
+        (window as Window & { __plannerStylusActive?: boolean }).__plannerStylusActive = false;
         // Also clear any stale touch points that snuck in during stylus contact.
         activeTouchPointsRef.current.clear();
         touchGestureMetaRef.current.clear();
@@ -964,6 +966,13 @@ export default function App() {
     event.preventDefault();
     clearBrowserSelection();
 
+    // When zoomed in, stop propagation for single-finger touches so that swipe
+    // navigation handlers in child components don't fire — the finger should pan
+    // the zoomed surface, not navigate weeks/months.
+    if (activeTouchPointsRef.current.size === 1 && zoomScaleRef.current > MIN_ZOOM_SCALE + 0.001) {
+      event.stopPropagation();
+    }
+
     if (activeTouchPointsRef.current.size === 3) {
       const points = Array.from(activeTouchPointsRef.current.entries());
       const pointerIds = points.map(([pointerId]) => pointerId);
@@ -1021,6 +1030,7 @@ export default function App() {
       return;
     }
 
+    const previousPoint = activeTouchPointsRef.current.get(event.pointerId);
     activeTouchPointsRef.current.set(event.pointerId, {
       x: event.clientX,
       y: event.clientY,
@@ -1054,6 +1064,14 @@ export default function App() {
     }
 
     if (activeTouchPointsRef.current.size < 2) {
+      // Single-finger pan when zoomed in.
+      if (zoomScaleRef.current > MIN_ZOOM_SCALE + 0.001 && previousPoint) {
+        applyZoomTransform(zoomScaleRef.current, {
+          x: zoomOffsetRef.current.x + (event.clientX - previousPoint.x),
+          y: zoomOffsetRef.current.y + (event.clientY - previousPoint.y),
+        });
+        event.stopPropagation();
+      }
       return;
     }
 
